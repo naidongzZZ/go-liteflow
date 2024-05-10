@@ -22,7 +22,12 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CoreClient interface {
+	// Event channels between task managers
 	EventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_EventChannelClient, error)
+	// Send heart beat to coordinator
+	SendHeartBeat(ctx context.Context, in *HealthCheckReq, opts ...grpc.CallOption) (*HealthCheckResp, error)
+	// Submit tasks to the coordinator
+	SubmitOpTask(ctx context.Context, in *SubmitOpTaskReq, opts ...grpc.CallOption) (*SubmitOpTaskResp, error)
 }
 
 type coreClient struct {
@@ -64,11 +69,34 @@ func (x *coreEventChannelClient) Recv() (*EventChannelResp, error) {
 	return m, nil
 }
 
+func (c *coreClient) SendHeartBeat(ctx context.Context, in *HealthCheckReq, opts ...grpc.CallOption) (*HealthCheckResp, error) {
+	out := new(HealthCheckResp)
+	err := c.cc.Invoke(ctx, "/pb.core/SendHeartBeat", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreClient) SubmitOpTask(ctx context.Context, in *SubmitOpTaskReq, opts ...grpc.CallOption) (*SubmitOpTaskResp, error) {
+	out := new(SubmitOpTaskResp)
+	err := c.cc.Invoke(ctx, "/pb.core/SubmitOpTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServer is the server API for Core service.
 // All implementations must embed UnimplementedCoreServer
 // for forward compatibility
 type CoreServer interface {
+	// Event channels between task managers
 	EventChannel(Core_EventChannelServer) error
+	// Send heart beat to coordinator
+	SendHeartBeat(context.Context, *HealthCheckReq) (*HealthCheckResp, error)
+	// Submit tasks to the coordinator
+	SubmitOpTask(context.Context, *SubmitOpTaskReq) (*SubmitOpTaskResp, error)
 	mustEmbedUnimplementedCoreServer()
 }
 
@@ -78,6 +106,12 @@ type UnimplementedCoreServer struct {
 
 func (UnimplementedCoreServer) EventChannel(Core_EventChannelServer) error {
 	return status.Errorf(codes.Unimplemented, "method EventChannel not implemented")
+}
+func (UnimplementedCoreServer) SendHeartBeat(context.Context, *HealthCheckReq) (*HealthCheckResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendHeartBeat not implemented")
+}
+func (UnimplementedCoreServer) SubmitOpTask(context.Context, *SubmitOpTaskReq) (*SubmitOpTaskResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SubmitOpTask not implemented")
 }
 func (UnimplementedCoreServer) mustEmbedUnimplementedCoreServer() {}
 
@@ -118,13 +152,58 @@ func (x *coreEventChannelServer) Recv() (*EventChannelReq, error) {
 	return m, nil
 }
 
+func _Core_SendHeartBeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(HealthCheckReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServer).SendHeartBeat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.core/SendHeartBeat",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServer).SendHeartBeat(ctx, req.(*HealthCheckReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Core_SubmitOpTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SubmitOpTaskReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServer).SubmitOpTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.core/SubmitOpTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServer).SubmitOpTask(ctx, req.(*SubmitOpTaskReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Core_ServiceDesc is the grpc.ServiceDesc for Core service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Core_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "pb.core",
 	HandlerType: (*CoreServer)(nil),
-	Methods:     []grpc.MethodDesc{},
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SendHeartBeat",
+			Handler:    _Core_SendHeartBeat_Handler,
+		},
+		{
+			MethodName: "SubmitOpTask",
+			Handler:    _Core_SubmitOpTask_Handler,
+		},
+	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "EventChannel",

@@ -5,35 +5,74 @@ package pb;
 option go_package = ".";
 
 service core {
-    rpc EventChannel(stream EventChannelReq) returns (stream EventChannelResp) {}
+  // Event channels between task managers
+  rpc EventChannel(stream EventChannelReq) returns (stream EventChannelResp) {}
+  // Send heart beat to coordinator
+  rpc SendHeartBeat(HealthCheckReq) returns (HealthCheckResp) {}
+  // Submit tasks to the coordinator
+  rpc SubmitOpTask(SubmitOpTaskReq) returns (SubmitOpTaskResp) {}
 }
 
-message DAG {
-    repeated OperatorTask start  = 1;
-    repeated OperatorTask end = 2;
+// directed graph
+message Digraph { repeated OperatorTask adj = 1; }
+
+// operator type
+enum OpType {
+  OpUnknown = 0;
+  Map = 1;
+  Reduce = 2;
+}
+
+// task status
+enum TaskStatus {
+  TsUnknown = 0;
+  Ready = 1;
+  Running = 2;
 }
 
 message OperatorTask {
-    string id = 1;
-    string client_id = 2;
-    int32 op_type = 3;
-    string op_id = 4;
-    string worker_id = 5;
-    int32 state = 6;
-    int32 parallelism  = 7;
-    repeated OperatorTask upstream  = 8;
-    repeated OperatorTask downstream = 9; 
+  // task identity
+  string id = 1;
+  // client identity
+  string client_id = 2;
+  // operator type
+  OpType op_type = 3;
+  // operator identity
+  string op_id = 4;
+  // task manager identity
+  string task_manager_id = 5;
+  // task status
+  TaskStatus state = 6;
+  // many instances are executed in parallel
+  int32 parallelism = 7;
+  // upstream task
+  repeated OperatorTask upstream = 8;
+  // downstream task
+  repeated OperatorTask downstream = 9;
 }
 
 message Event {
-    string id = 1;
-    int64 event_time = 2;
-    map<string, string> data = 3;
+  string id = 1;
+  int64 event_time = 2;
+  // next task id
+  string task_id = 3;
+  map<string, string> data = 4;
 }
 
-message EventChannelReq{
+message EventChannelReq { repeated Event events = 1; }
 
+message EventChannelResp {}
+
+message HealthCheckReq {
+  string task_manager_id = 1;
+  int32 service_status = 2;
 }
 
-message EventChannelResp{
+message HealthCheckResp {}
+
+message SubmitOpTaskReq {
+  Digraph digraph = 1;
+  string client_id = 2;
 }
+
+message SubmitOpTaskResp {}
