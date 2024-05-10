@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = ".";
+
+service core {
+    rpc EventChannel(stream EventChannelReq) returns (stream EventChannelResp) {}
+}
+
+message DAG {
+    repeated OperatorTask start  = 1;
+    repeated OperatorTask end = 2;
+}
+
+message OperatorTask {
+    string id = 1;
+    string client_id = 2;
+    int32 op_type = 3;
+    string op_id = 4;
+    string worker_id = 5;
+    int32 state = 6;
+    int32 parallelism  = 7;
+    repeated OperatorTask upstream  = 8;
+    repeated OperatorTask downstream = 9; 
+}
+
+message Event {
+    string id = 1;
+    int64 event_time = 2;
+    map<string, string> data = 3;
+}
+
+message EventChannelReq{
+
+}
+
+message EventChannelResp{
+}
