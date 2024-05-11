@@ -7,14 +7,28 @@ option go_package = ".";
 service core {
   // Event channels between task managers
   rpc EventChannel(stream EventChannelReq) returns (stream EventChannelResp) {}
+  // todo raft
   // Send heart beat to coordinator
-  rpc SendHeartBeat(HealthCheckReq) returns (HealthCheckResp) {}
+  rpc SendHeartBeat(HeartBeatReq) returns (HeartBeatResp) {}
   // Submit tasks to the coordinator
   rpc SubmitOpTask(SubmitOpTaskReq) returns (SubmitOpTaskResp) {}
+  // Deploy tasks to task manager
+  rpc DeployOpTask(DeployOpTaskReq) returns (DeployOpTaskResp) {}
+  // Manage tasks status
+  rpc ManageOpTask(ManageOpTaskReq) returns (ManageOpTaskResp) {}
+  // Report task's infomation to coordinator
+  rpc ReportOpTask(ReportOpTaskReq) returns (ReportOpTaskResp) {}
+  // Download executable file
+  rpc DownloadOpTaskEF(DownloadReq) returns (stream DownloadResp) {}
 }
 
 // directed graph
-message Digraph { repeated OperatorTask adj = 1; }
+message Digraph {
+  // graph task id
+  string graph_id = 1;
+  //
+  repeated OperatorTask adj = 2;
+}
 
 // operator type
 enum OpType {
@@ -53,22 +67,33 @@ message OperatorTask {
 
 message Event {
   string id = 1;
+  // occurrence time
   int64 event_time = 2;
-  // next task id
-  string task_id = 3;
-  map<string, string> data = 4;
+  // source task
+  string source_op_task_id = 3;
+  // target task
+  string target_op_task_id = 4;
+  // event data
+  bytes data = 5;
 }
 
 message EventChannelReq { repeated Event events = 1; }
 
 message EventChannelResp {}
 
-message HealthCheckReq {
-  string task_manager_id = 1;
-  int32 service_status = 2;
+// task manager's status or coordinator's status
+enum ServiceStatus {
+  SsUnknown = 0;
+  SsReady = 1;
+  SsRunning = 2;
 }
 
-message HealthCheckResp {}
+message HeartBeatReq {
+  string task_manager_id = 1;
+  ServiceStatus service_status = 2;
+}
+
+message HeartBeatResp {}
 
 message SubmitOpTaskReq {
   Digraph digraph = 1;
@@ -76,3 +101,41 @@ message SubmitOpTaskReq {
 }
 
 message SubmitOpTaskResp {}
+
+message DeployOpTaskReq {
+  // use for download executable file
+  string client_id = 1;
+  // task graph and task info
+  Digraph digraph = 2;
+  // need deploy task
+  repeated string op_task_ids = 3;
+}
+
+message DeployOpTaskResp {}
+
+enum ManageType {
+  MtUnknown = 0;
+  Start = 1;
+  Interrupt = 2;
+  Stop = 3;
+}
+
+message ManageOpTaskReq {
+  // specified task id
+  repeated string op_task_ids = 1;
+  // start or stop
+  ManageType manage_type = 2;
+}
+
+message ManageOpTaskResp {}
+
+message ReportOpTaskReq {
+  string op_task_id = 1;
+  TaskStatus op_task_status = 2;
+}
+
+message ReportOpTaskResp {}
+
+message DownloadReq { string client_id = 1; }
+
+message DownloadResp { bytes file_bytes = 1; }

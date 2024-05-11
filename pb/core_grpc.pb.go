@@ -24,10 +24,19 @@ const _ = grpc.SupportPackageIsVersion7
 type CoreClient interface {
 	// Event channels between task managers
 	EventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_EventChannelClient, error)
+	// todo raft
 	// Send heart beat to coordinator
-	SendHeartBeat(ctx context.Context, in *HealthCheckReq, opts ...grpc.CallOption) (*HealthCheckResp, error)
+	SendHeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error)
 	// Submit tasks to the coordinator
 	SubmitOpTask(ctx context.Context, in *SubmitOpTaskReq, opts ...grpc.CallOption) (*SubmitOpTaskResp, error)
+	// Deploy tasks to task manager
+	DeployOpTask(ctx context.Context, in *DeployOpTaskReq, opts ...grpc.CallOption) (*DeployOpTaskResp, error)
+	// Manage tasks status
+	ManageOpTask(ctx context.Context, in *ManageOpTaskReq, opts ...grpc.CallOption) (*ManageOpTaskResp, error)
+	// Report task's infomation to coordinator
+	ReportOpTask(ctx context.Context, in *ReportOpTaskReq, opts ...grpc.CallOption) (*ReportOpTaskResp, error)
+	// Download executable file
+	DownloadOpTaskEF(ctx context.Context, in *DownloadReq, opts ...grpc.CallOption) (Core_DownloadOpTaskEFClient, error)
 }
 
 type coreClient struct {
@@ -69,8 +78,8 @@ func (x *coreEventChannelClient) Recv() (*EventChannelResp, error) {
 	return m, nil
 }
 
-func (c *coreClient) SendHeartBeat(ctx context.Context, in *HealthCheckReq, opts ...grpc.CallOption) (*HealthCheckResp, error) {
-	out := new(HealthCheckResp)
+func (c *coreClient) SendHeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error) {
+	out := new(HeartBeatResp)
 	err := c.cc.Invoke(ctx, "/pb.core/SendHeartBeat", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -87,16 +96,84 @@ func (c *coreClient) SubmitOpTask(ctx context.Context, in *SubmitOpTaskReq, opts
 	return out, nil
 }
 
+func (c *coreClient) DeployOpTask(ctx context.Context, in *DeployOpTaskReq, opts ...grpc.CallOption) (*DeployOpTaskResp, error) {
+	out := new(DeployOpTaskResp)
+	err := c.cc.Invoke(ctx, "/pb.core/DeployOpTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreClient) ManageOpTask(ctx context.Context, in *ManageOpTaskReq, opts ...grpc.CallOption) (*ManageOpTaskResp, error) {
+	out := new(ManageOpTaskResp)
+	err := c.cc.Invoke(ctx, "/pb.core/ManageOpTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreClient) ReportOpTask(ctx context.Context, in *ReportOpTaskReq, opts ...grpc.CallOption) (*ReportOpTaskResp, error) {
+	out := new(ReportOpTaskResp)
+	err := c.cc.Invoke(ctx, "/pb.core/ReportOpTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreClient) DownloadOpTaskEF(ctx context.Context, in *DownloadReq, opts ...grpc.CallOption) (Core_DownloadOpTaskEFClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Core_ServiceDesc.Streams[1], "/pb.core/DownloadOpTaskEF", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &coreDownloadOpTaskEFClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Core_DownloadOpTaskEFClient interface {
+	Recv() (*DownloadResp, error)
+	grpc.ClientStream
+}
+
+type coreDownloadOpTaskEFClient struct {
+	grpc.ClientStream
+}
+
+func (x *coreDownloadOpTaskEFClient) Recv() (*DownloadResp, error) {
+	m := new(DownloadResp)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 // CoreServer is the server API for Core service.
 // All implementations must embed UnimplementedCoreServer
 // for forward compatibility
 type CoreServer interface {
 	// Event channels between task managers
 	EventChannel(Core_EventChannelServer) error
+	// todo raft
 	// Send heart beat to coordinator
-	SendHeartBeat(context.Context, *HealthCheckReq) (*HealthCheckResp, error)
+	SendHeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error)
 	// Submit tasks to the coordinator
 	SubmitOpTask(context.Context, *SubmitOpTaskReq) (*SubmitOpTaskResp, error)
+	// Deploy tasks to task manager
+	DeployOpTask(context.Context, *DeployOpTaskReq) (*DeployOpTaskResp, error)
+	// Manage tasks status
+	ManageOpTask(context.Context, *ManageOpTaskReq) (*ManageOpTaskResp, error)
+	// Report task's infomation to coordinator
+	ReportOpTask(context.Context, *ReportOpTaskReq) (*ReportOpTaskResp, error)
+	// Download executable file
+	DownloadOpTaskEF(*DownloadReq, Core_DownloadOpTaskEFServer) error
 	mustEmbedUnimplementedCoreServer()
 }
 
@@ -107,11 +184,23 @@ type UnimplementedCoreServer struct {
 func (UnimplementedCoreServer) EventChannel(Core_EventChannelServer) error {
 	return status.Errorf(codes.Unimplemented, "method EventChannel not implemented")
 }
-func (UnimplementedCoreServer) SendHeartBeat(context.Context, *HealthCheckReq) (*HealthCheckResp, error) {
+func (UnimplementedCoreServer) SendHeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendHeartBeat not implemented")
 }
 func (UnimplementedCoreServer) SubmitOpTask(context.Context, *SubmitOpTaskReq) (*SubmitOpTaskResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitOpTask not implemented")
+}
+func (UnimplementedCoreServer) DeployOpTask(context.Context, *DeployOpTaskReq) (*DeployOpTaskResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeployOpTask not implemented")
+}
+func (UnimplementedCoreServer) ManageOpTask(context.Context, *ManageOpTaskReq) (*ManageOpTaskResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ManageOpTask not implemented")
+}
+func (UnimplementedCoreServer) ReportOpTask(context.Context, *ReportOpTaskReq) (*ReportOpTaskResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportOpTask not implemented")
+}
+func (UnimplementedCoreServer) DownloadOpTaskEF(*DownloadReq, Core_DownloadOpTaskEFServer) error {
+	return status.Errorf(codes.Unimplemented, "method DownloadOpTaskEF not implemented")
 }
 func (UnimplementedCoreServer) mustEmbedUnimplementedCoreServer() {}
 
@@ -153,7 +242,7 @@ func (x *coreEventChannelServer) Recv() (*EventChannelReq, error) {
 }
 
 func _Core_SendHeartBeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(HealthCheckReq)
+	in := new(HeartBeatReq)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -165,7 +254,7 @@ func _Core_SendHeartBeat_Handler(srv interface{}, ctx context.Context, dec func(
 		FullMethod: "/pb.core/SendHeartBeat",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServer).SendHeartBeat(ctx, req.(*HealthCheckReq))
+		return srv.(CoreServer).SendHeartBeat(ctx, req.(*HeartBeatReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -188,6 +277,81 @@ func _Core_SubmitOpTask_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Core_DeployOpTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeployOpTaskReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServer).DeployOpTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.core/DeployOpTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServer).DeployOpTask(ctx, req.(*DeployOpTaskReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Core_ManageOpTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ManageOpTaskReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServer).ManageOpTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.core/ManageOpTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServer).ManageOpTask(ctx, req.(*ManageOpTaskReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Core_ReportOpTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportOpTaskReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServer).ReportOpTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.core/ReportOpTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServer).ReportOpTask(ctx, req.(*ReportOpTaskReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Core_DownloadOpTaskEF_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DownloadReq)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(CoreServer).DownloadOpTaskEF(m, &coreDownloadOpTaskEFServer{stream})
+}
+
+type Core_DownloadOpTaskEFServer interface {
+	Send(*DownloadResp) error
+	grpc.ServerStream
+}
+
+type coreDownloadOpTaskEFServer struct {
+	grpc.ServerStream
+}
+
+func (x *coreDownloadOpTaskEFServer) Send(m *DownloadResp) error {
+	return x.ServerStream.SendMsg(m)
+}
+
 // Core_ServiceDesc is the grpc.ServiceDesc for Core service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -203,6 +367,18 @@ var Core_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "SubmitOpTask",
 			Handler:    _Core_SubmitOpTask_Handler,
 		},
+		{
+			MethodName: "DeployOpTask",
+			Handler:    _Core_DeployOpTask_Handler,
+		},
+		{
+			MethodName: "ManageOpTask",
+			Handler:    _Core_ManageOpTask_Handler,
+		},
+		{
+			MethodName: "ReportOpTask",
+			Handler:    _Core_ReportOpTask_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -210,6 +386,11 @@ var Core_ServiceDesc = grpc.ServiceDesc{
 			Handler:       _Core_EventChannel_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
+		},
+		{
+			StreamName:    "DownloadOpTaskEF",
+			Handler:       _Core_DownloadOpTaskEF_Handler,
+			ServerStreams: true,
 		},
 	},
 	Metadata: "pb/core.proto",
