@@ -8,7 +8,7 @@ service core {
   // Event channels between task managers
   rpc EventChannel(stream EventChannelReq) returns (stream EventChannelResp) {}
   // todo raft
-  // Send heart beat to coordinator
+  // Send heart beat to coordinator or Ask if the coordinator is alive
   rpc SendHeartBeat(HeartBeatReq) returns (HeartBeatResp) {}
   // Submit tasks to the coordinator
   rpc SubmitOpTask(SubmitOpTaskReq) returns (SubmitOpTaskResp) {}
