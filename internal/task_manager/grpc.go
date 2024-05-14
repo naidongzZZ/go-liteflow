@@ -3,10 +3,9 @@ package task_manager
 import (
 	"go-liteflow/internal/core"
 	pb "go-liteflow/pb"
+	"io"
+	"log"
 	"time"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type grpcServer struct {
@@ -14,8 +13,28 @@ type grpcServer struct {
 	tm *taskManager
 }
 
-func (c *grpcServer) EventChannel(srv pb.Core_EventChannelServer) error {
-	return status.Errorf(codes.Unimplemented, "method EventChannel not implemented")
+func NewGrpcServer() *grpcServer {
+	return &grpcServer{}
+}
+
+func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
+
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			log.Printf("Read done \n")
+			// read done.
+			break
+		}
+		if err != nil {
+			log.Fatalf("Failed to receive a note : %v", err)
+			return err
+		}
+		log.Printf("Got message %v \n", in.Events)
+
+		// todo distribute events
+	}
+	return nil
 }
 
 func GetOperatorNodeClient(opId string) *pb.Core_EventChannelClient {
