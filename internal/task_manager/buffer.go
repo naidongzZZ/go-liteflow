@@ -53,8 +53,8 @@ func (b *Buffer) AddData(dataType DataType, data [][]byte) bool {
     return true
 }
 
-// dequeue data from rel queue when the datas match the space
-func (b *Buffer) RemoveData(dataType DataType, size int) [][]byte {
+// dequeue data from rel queue when the datas match the space and exec process success
+func (b *Buffer) RemoveData(dataType DataType, size int,process func([][]byte) error ) error {
     b.Mu.Lock()
     defer b.Mu.Unlock()
 
@@ -80,7 +80,11 @@ func (b *Buffer) RemoveData(dataType DataType, size int) [][]byte {
         curSize += len(d)
         removeCount++
     }
+    err := process(data)
+    if err != nil {
+        return err
+    }
     *queue = (*queue)[removeCount:]
     b.Usage -= curSize
-    return data
+    return nil
 }
