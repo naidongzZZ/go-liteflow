@@ -1,11 +1,10 @@
 package task_manager
 
 import (
-	"fmt"
 	"go-liteflow/internal/core"
 	pb "go-liteflow/pb"
 	"io"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -31,16 +30,16 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 		for {
 			in, err := stream.Recv()
 			if err == io.EOF {
-				fmt.Printf("Read done \n")
+				slog.Info("Read all client's msg done \n")
 				// read done.
 				close(waitc)
 				break
 			}
 			if err != nil {
-				fmt.Printf("Failed to receive a note : %v", err)
+				slog.Error("Failed to receive a event : %v", err)
 				return
 			}
-			log.Printf("Got message %v \n", in.Events)
+			slog.Info("Recv client message %v", in.Events)
 	
 			// todo distribute events
 		}

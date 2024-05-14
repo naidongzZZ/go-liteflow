@@ -5,15 +5,18 @@ import (
 	"errors"
 	"go-liteflow/internal/coordinator"
 	"go-liteflow/internal/task_manager"
-	"log"
 	"os"
+
+	"log/slog"
 
 	"github.com/urfave/cli"
 )
 
+// debug: go run main.go
 func main() {
 
 	app := cli.NewApp()
+
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name: "run",
@@ -40,7 +43,7 @@ func main() {
 		}
 		
 		coordAddr := ctx.String("coord")
-		log.Printf("%s start on %s ...", runMode, addr)
+		slog.Info("%s start on %s ...", runMode, addr)
 
 		if runMode == "task_manager" {
 			tm := task_manager.NewTaskManager(addr, coordAddr)
@@ -53,7 +56,7 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		panic(err)
+		slog.Error("server exit: %v", err)
 	}
 
 }
