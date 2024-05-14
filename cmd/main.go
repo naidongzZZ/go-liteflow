@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"go-liteflow/internal/coordinator"
 	"go-liteflow/internal/task_manager"
 	"os"
@@ -12,44 +11,59 @@ import (
 	"github.com/urfave/cli"
 )
 
-// debug: go run main.go
+// usage: go run cmd/main.go help
 func main() {
 
+	slog.SetLogLoggerLevel(slog.LevelDebug)
+
 	app := cli.NewApp()
+	app.Name = "liteflow"
+	app.Usage = "🐣 lightweight distributed stream processing"
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name: "run",
-			Usage: "task_manager or coordinator",
+			Name: "run_mode",
+			Usage: "Start task_manager or coordinator",
 			Value: "task_manager",
 		},
 		cli.StringFlag{
 			Name:  "addr",
-			Usage: "App Address",
+			Usage: "App's Address",
 			Value: ":20020",
 		},
 		cli.StringFlag{
 			Name:  "coord_addr",
-			Usage: "Coordinator Address",
+			Usage: "Coordinator's Address",
+			Value: "127.0.0.1:20021",
 		},
 	}
 
 	app.Action = func(ctx *cli.Context) error {
 
-		runMode := ctx.String("run")
-		addr := ctx.String("addr")
+		runMode, addr := ctx.String("run_mode"), ctx.String("addr")
 		if len(addr) == 0 {
-			return errors.New("addr is nil")
+			slog.Error("addr is illegal", slog.String("addr", addr))
+			return nil
 		}
 		
-		coordAddr := ctx.String("coord")
-		slog.Info("%s start on %s ...", runMode, addr)
+		slog.Info("app start.", 
+	slog.String("run_mode", runMode), slog.String("addr", addr))
 
 		if runMode == "task_manager" {
+			coordAddr := ctx.String("coord_addr")
+			if len(coordAddr) == 0 {
+				slog.Error("coordinator's address is nil")
+				return nil
+			}
+
 			tm := task_manager.NewTaskManager(addr, coordAddr)
+			slog.Info("task_manager info.", slog.String("ID", tm.ID()))
+
 			tm.Start(context.Background())
 		} else if runMode == "coordinator" {
 			co := coordinator.NewCoordinator(addr)
+			slog.Info("coordinator info.", slog.String("ID", co.ID()))
+
 			co.Start(context.Background())
 		}
 		return nil

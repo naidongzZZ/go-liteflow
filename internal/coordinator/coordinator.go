@@ -44,13 +44,17 @@ func NewCoordinator(addr string) *coordinator {
 	return co
 }
 
-func (c *coordinator) Start(ctx context.Context) {
+func (co *coordinator) Start(ctx context.Context) {
 
-	listener, err := net.Listen("tcp", c.addr)
+	listener, err := net.Listen("tcp", co.addr)
 	if err != nil {
 		panic(err)
 	}
-	if err = c.srv.Serve(listener); err != nil {
+	if err = co.srv.Serve(listener); err != nil {
 		panic(err)
 	}
+}
+
+func (co *coordinator) ID() string {
+	return co.coordinatorId
 }
