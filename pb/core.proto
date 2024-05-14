@@ -79,7 +79,9 @@ message Event {
 
 message EventChannelReq { repeated Event events = 1; }
 
-message EventChannelResp {}
+message EventChannelResp {
+  map<string, string> ctrl_info = 1;
+}
 
 // task manager's status or coordinator's status
 enum ServiceStatus {

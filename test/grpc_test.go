@@ -13,35 +13,46 @@ import (
 
 func TestEventChannel(t *testing.T) {
 
-	ch := make(chan struct{}, 1)
+	waitc := make(chan struct{}, 1)
 
+	// client 
 	go func() {
-		<-ch
+		// wait for the server to start
+		time.Sleep(2 * time.Second)
+
 		conn, err := grpc.Dial("127.0.0.1:20020", grpc.WithInsecure())
 		if err != nil {
-			panic(err)
+			t.Log(err)
+			return 
 		}
-
 		stream, err := pb.NewCoreClient(conn).EventChannel(context.Background())
 		if err != nil {
-			panic(err)
+			t.Log(err)
+			return
 		}
 		if err = stream.Send(&pb.EventChannelReq{Events: []*pb.Event{{Data: []byte("hello")}}}); err != nil {
-			panic(err)
+			t.Log(err)
+			return
 		}
 		stream.CloseSend()
+
+		eventChannelResp, err := stream.Recv()
+		if err != nil {
+			t.Log(err)
+			return
+		}
+		t.Log("recv server resp: ", eventChannelResp)
+		waitc <- struct{}{}
 	}()
 
-	go func() {
-		time.Sleep(1 * time.Second)
-		ch <- struct{}{}
-	}()
-
+	// start server
 	srv := grpc.NewServer()
 	pb.RegisterCoreServer(srv, task_manager.NewGrpcServer())
 	go func() {
-		time.Sleep(2 * time.Second)
-		srv.GracefulStop()
+		// auto stop server
+		<- waitc
+		t.Log("closing server")
+		srv.Stop()
 	}()
 
 	listener, err := net.Listen("tcp", "127.0.0.1:20020")

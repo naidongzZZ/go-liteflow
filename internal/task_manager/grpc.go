@@ -1,10 +1,12 @@
 package task_manager
 
 import (
+	"fmt"
 	"go-liteflow/internal/core"
 	pb "go-liteflow/pb"
 	"io"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -18,22 +20,48 @@ func NewGrpcServer() *grpcServer {
 }
 
 func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
+	
+	waitc := make(chan struct{})
 
-	for {
-		in, err := stream.Recv()
-		if err == io.EOF {
-			log.Printf("Read done \n")
-			// read done.
-			break
+	var wg sync.WaitGroup
+	wg.Add(1)
+	// read goroutine
+	go func ()  {
+		defer wg.Done()
+		for {
+			in, err := stream.Recv()
+			if err == io.EOF {
+				fmt.Printf("Read done \n")
+				// read done.
+				close(waitc)
+				break
+			}
+			if err != nil {
+				fmt.Printf("Failed to receive a note : %v", err)
+				return
+			}
+			log.Printf("Got message %v \n", in.Events)
+	
+			// todo distribute events
 		}
-		if err != nil {
-			log.Fatalf("Failed to receive a note : %v", err)
-			return err
-		}
-		log.Printf("Got message %v \n", in.Events)
+	}()
 
-		// todo distribute events
-	}
+	wg.Add(1)
+	// write goroutine
+	go func ()  {
+		defer wg.Done()
+		for {
+			select {
+			case <- waitc:
+				stream.Send(&pb.EventChannelResp{CtrlInfo: map[string]string{"msg":"write channel is closing"}})
+				break
+			// todo resize window size
+			// stream.Send(&pb.EventChannelResp)
+			}
+		}
+	} ()
+
+	wg.Wait()
 	return nil
 }
 
