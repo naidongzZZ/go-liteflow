@@ -1,6 +1,6 @@
 module go-liteflow
 
-go 1.20
+go 1.22.3
 
 require (
 	google.golang.org/grpc v1.33.1
@@ -8,7 +8,14 @@ require (
 )
 
 require (
-	github.com/golang/protobuf v1.5.0 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
+	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+)
+
+require (
+	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/uuid v1.6.0
+	github.com/urfave/cli v1.22.15
 	golang.org/x/net v0.0.0-20190311183353-d8887717615a // indirect
 	golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a // indirect
 	golang.org/x/text v0.3.0 // indirect

@@ -25,7 +25,7 @@ type CoreClient interface {
 	// Event channels between task managers
 	EventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_EventChannelClient, error)
 	// todo raft
-	// Send heart beat to coordinator
+	// Send heart beat to coordinator or Ask if the coordinator is alive
 	SendHeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error)
 	// Submit tasks to the coordinator
 	SubmitOpTask(ctx context.Context, in *SubmitOpTaskReq, opts ...grpc.CallOption) (*SubmitOpTaskResp, error)
@@ -162,7 +162,7 @@ type CoreServer interface {
 	// Event channels between task managers
 	EventChannel(Core_EventChannelServer) error
 	// todo raft
-	// Send heart beat to coordinator
+	// Send heart beat to coordinator or Ask if the coordinator is alive
 	SendHeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error)
 	// Submit tasks to the coordinator
 	SubmitOpTask(context.Context, *SubmitOpTaskReq) (*SubmitOpTaskResp, error)

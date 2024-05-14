@@ -93,7 +93,7 @@ message HeartBeatReq {
   ServiceStatus service_status = 2;
 }
 
-message HeartBeatResp {}
+message HeartBeatResp { repeated string task_manager_addrs = 1; }
 
 message SubmitOpTaskReq {
   Digraph digraph = 1;
