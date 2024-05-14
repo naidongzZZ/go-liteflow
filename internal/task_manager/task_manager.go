@@ -15,12 +15,12 @@ type taskManager struct {
 
 	coordinatorId   string
 	coordinatorAddr string
-	coordinatorConn *grpc.ClientConn
+	coordinatorConn pb.CoreClient
 
 	srv  *grpc.Server
 	gSrv *grpcServer
 
-	taskManagerAddrs map[string]*grpc.ClientConn
+	taskManagerAddrs map[string]pb.CoreClient
 }
 
 func NewTaskManager(addr, coordAddr string) *taskManager {
@@ -65,11 +65,11 @@ func (tm *taskManager) InitGrpcClients(ctx context.Context) (err error) {
 	}
 
 	tm.coordinatorConn = pb.NewCoreClient(conn)
-	heartBeatResp, err := tm.coordinatorConn.SendHeartBeat(context.Background(), 
+	heartBeatResp, err := tm.coordinatorConn.SendHeartBeat(ctx,
 		&pb.HeartBeatReq{
 			TaskManagerId: tm.taskManagerId,
 			ServiceStatus: pb.ServiceStatus_SsReady,
-	})
+		})
 	if err != nil {
 		return err
 	}
@@ -77,17 +77,17 @@ func (tm *taskManager) InitGrpcClients(ctx context.Context) (err error) {
 		return nil
 	}
 
-	tm.taskManagerAddrs = make(map[string]*grpc.ClientConn)
+	tm.taskManagerAddrs = make(map[string]pb.CoreClient)
 	for _, tmAddr := range heartBeatResp.TaskManagerAddrs {
-		obj, ok := tm.taskManagerAddrs[tmAddr]
-		if ok || obj != nil {
+		_, ok := tm.taskManagerAddrs[tmAddr]
+		if ok {
 			continue
 		}
 		conn, err := grpc.Dial(tm.coordinatorAddr, grpc.WithInsecure())
 		if err != nil {
 			return err
 		}
-		tm.taskManagerAddr[tmAddr] = pb.NewCoreClient(conn)
+		tm.taskManagerAddrs[tmAddr] = pb.NewCoreClient(conn)
 	}
 
 	return
