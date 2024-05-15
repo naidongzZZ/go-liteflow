@@ -90,12 +90,24 @@ enum ServiceStatus {
   SsRunning = 2;
 }
 
-message HeartBeatReq {
-  string task_manager_id = 1;
-  ServiceStatus service_status = 2;
+enum ServiceType {
+   StUnknown = 0;
+   Coordinator = 1;
+   TaskManager = 2;
 }
 
-message HeartBeatResp { repeated string task_manager_addrs = 1; }
+message ServiceInfo {
+  string id = 1;
+  ServiceType service_type = 2;
+  ServiceStatus service_status = 3;
+  string service_addr = 4;
+}
+
+message HeartBeatReq {
+  ServiceInfo service_info = 1;
+}
+
+message HeartBeatResp { map<string, ServiceInfo> service_infos = 1; }
 
 message SubmitOpTaskReq {
   Digraph digraph = 1;

@@ -5,25 +5,24 @@ import (
 	pb "go-liteflow/pb"
 	"log/slog"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/connectivity"
 )
 
 type taskManager struct {
-	taskManagerId string
-	addr          string
+	taskManagerInfo *pb.ServiceInfo
 
-	coordinatorId   string
-	coordinatorAddr string
-	coordinatorConn pb.CoreClient
+	coordinatorInfo *pb.ServiceInfo
 
 	srv  *grpc.Server
 	gSrv *grpcServer
 
-	taskManagerAddrs map[string]pb.CoreClient
+	mux          sync.Mutex
+	serviceInfos map[string]*pb.ServiceInfo
+	clientConns  map[string]pb.CoreClient
 }
 
 func NewTaskManager(addr, coordAddr string) *taskManager {
@@ -34,10 +33,15 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 	}
 
 	tm := &taskManager{
-		taskManagerId:   ranUid.String(),
-		addr:            addr,
-		coordinatorAddr: coordAddr,
-		taskManagerAddrs: make(map[string]pb.CoreClient),
+		taskManagerInfo: &pb.ServiceInfo{
+			Id:          ranUid.String(),
+			ServiceAddr: addr,
+		},
+		coordinatorInfo: &pb.ServiceInfo{
+			ServiceAddr: coordAddr,
+		},
+		serviceInfos: make(map[string]*pb.ServiceInfo),
+		clientConns:  make(map[string]pb.CoreClient),
 	}
 
 	srv := grpc.NewServer()
@@ -59,7 +63,7 @@ func (tm *taskManager) Start(ctx context.Context) {
 		return
 	}
 
-	listener, err := net.Listen("tcp", tm.addr)
+	listener, err := net.Listen("tcp", tm.taskManagerInfo.ServiceAddr)
 	if err != nil {
 		slog.Error("new listener.", slog.Any("err", err))
 		panic(err)
@@ -73,39 +77,52 @@ func (tm *taskManager) Start(ctx context.Context) {
 }
 
 func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
-	conn, err := grpc.Dial(tm.coordinatorAddr, grpc.WithInsecure())
+	conn, err := grpc.Dial(tm.coordinatorInfo.ServiceAddr, grpc.WithInsecure())
 	if err != nil {
 		slog.Error("dial coordinator", slog.Any("err", err))
 		return err
 	}
 
-	tm.coordinatorConn = pb.NewCoreClient(conn)
-	
-	go func ()  {
+	coordinatorConn := pb.NewCoreClient(conn)
+	tm.mux.Lock()
+	tm.clientConns[tm.taskManagerInfo.ServiceAddr] = coordinatorConn
+	tm.mux.Unlock()
+
+	go func() {
 		for {
 			time.Sleep(5 * time.Second)
 
-			if conn.GetState() != connectivity.Ready {
-				slog.Debug("wait for connect coordinator.", slog.Any("state", conn.GetState()))
-				continue
-			}
-			resp, err := tm.coordinatorConn.SendHeartBeat(ctx,
-				&pb.HeartBeatReq{TaskManagerId: tm.taskManagerId})
+			resp, err := coordinatorConn.SendHeartBeat(ctx,
+				&pb.HeartBeatReq{
+					ServiceInfo: &pb.ServiceInfo{
+						Id:            tm.taskManagerInfo.Id,
+						ServiceType:   pb.ServiceType_TaskManager,
+						ServiceStatus: tm.taskManagerInfo.ServiceStatus,
+						ServiceAddr:   tm.taskManagerInfo.ServiceAddr}})
 			if err != nil {
-				slog.Error("send heart beat to coordinator,", slog.Any("err", err))
+				slog.Error("send heart beat to coordinator,",
+					slog.Any("err", err))
 				continue
 			}
-			if resp == nil || len(resp.TaskManagerAddrs) == 0 {
+			if resp == nil || len(resp.ServiceInfos) == 0 {
 				continue
-			}
-			for _, tmAddr := range resp.TaskManagerAddrs {
-				if _, ok := tm.taskManagerAddrs[tmAddr]; ok {
-					continue
-				}
-				tm.taskManagerAddrs[tmAddr] = nil
 			}
 
-			slog.Info("task manager send heart beat", slog.Int("task_manager_size", len(resp.TaskManagerAddrs)))
+			for tmid, servInfo := range resp.ServiceInfos {
+				if tmid == tm.taskManagerInfo.Id {
+					continue
+				}
+				tm.mux.Lock()
+				if _, ok := tm.serviceInfos[tmid]; ok {
+					tm.mux.Unlock()
+					continue
+				}
+				tm.serviceInfos[tmid] = servInfo
+				tm.mux.Unlock()
+			}
+
+			slog.Info("task manager send heart beat.",
+				slog.Int("tm_size", len(resp.ServiceInfos)))
 		}
 	}()
 
@@ -113,5 +130,5 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 }
 
 func (tm *taskManager) ID() string {
-	return tm.taskManagerId
+	return tm.taskManagerInfo.Id
 }

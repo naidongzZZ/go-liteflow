@@ -2,11 +2,10 @@ package coordinator
 
 import (
 	"context"
+	"errors"
 	"go-liteflow/internal/core"
 	pb "go-liteflow/pb"
-
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"log/slog"
 )
 
 type grpcServer struct {
@@ -14,10 +13,21 @@ type grpcServer struct {
 	coord *coordinator
 }
 
-func (s *grpcServer) EventChannel(srv pb.Core_EventChannelServer) error {
-	return status.Errorf(codes.Unimplemented, "method EventChannel not implemented")
+func NewGrpcServer() *grpcServer {
+	return &grpcServer{}
 }
 
 func (c *grpcServer) SendHeartBeat(ctx context.Context, req *pb.HeartBeatReq) (resp *pb.HeartBeatResp, err error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendHeartBeat not implemented")
+	resp = new(pb.HeartBeatResp)
+	if req == nil || req.ServiceInfo == nil {
+		return resp, errors.New("args is nil")
+	}
+	slog.Debug("Recv heart beat.", slog.Any("req", req))
+	err = c.coord.RegistServiceInfo(req.ServiceInfo)
+	if err != nil {
+		slog.Error("register service info.", slog.Any("err", err))
+		return
+	}
+	resp.ServiceInfos = c.coord.GetServiceInfo()
+	return resp, nil
 }

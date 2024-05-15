@@ -2,8 +2,11 @@ package coordinator
 
 import (
 	"context"
+	"errors"
 	"net"
+	"sync"
 
+	"go-liteflow/internal/pkg"
 	pb "go-liteflow/pb"
 
 	"github.com/google/uuid"
@@ -11,13 +14,13 @@ import (
 )
 
 type coordinator struct {
-	coordinatorId string
-	addr          string
+	coordinatorInfo *pb.ServiceInfo
 
 	srv  *grpc.Server
 	gSrv *grpcServer
 
-	taskManagerAddrs map[string]struct{}
+	mux          sync.Mutex
+	serviceInfos map[string]*pb.ServiceInfo
 }
 
 func NewCoordinator(addr string) *coordinator {
@@ -28,9 +31,12 @@ func NewCoordinator(addr string) *coordinator {
 	}
 
 	co := &coordinator{
-		coordinatorId:    ranUid.String(),
-		addr:             addr,
-		taskManagerAddrs: map[string]struct{}{},
+		coordinatorInfo: &pb.ServiceInfo{
+			Id:          ranUid.String(),
+			ServiceAddr: addr,
+			ServiceType: pb.ServiceType_Coordinator,
+		},
+		serviceInfos: make(map[string]*pb.ServiceInfo),
 	}
 
 	srv := grpc.NewServer()
@@ -46,7 +52,8 @@ func NewCoordinator(addr string) *coordinator {
 
 func (co *coordinator) Start(ctx context.Context) {
 
-	listener, err := net.Listen("tcp", co.addr)
+	listener, err := net.Listen("tcp",
+		co.coordinatorInfo.ServiceAddr)
 	if err != nil {
 		panic(err)
 	}
@@ -56,5 +63,33 @@ func (co *coordinator) Start(ctx context.Context) {
 }
 
 func (co *coordinator) ID() string {
-	return co.coordinatorId
+	return co.coordinatorInfo.Id
+}
+
+func (co *coordinator) RegistServiceInfo(si *pb.ServiceInfo) (err error) {
+	if err = uuid.Validate(si.Id); err != nil {
+		return err
+	}
+	if !pkg.ValidateIPv4WithPort(si.ServiceAddr) {
+		return errors.New("addr is illegal")
+	}
+	co.mux.Lock()
+	defer co.mux.Unlock()
+
+	co.serviceInfos[si.Id] = si
+	return nil
+}
+
+func (co *coordinator) GetServiceInfo(ids ...string) map[string]*pb.ServiceInfo {
+	co.mux.Lock()
+	defer co.mux.Unlock()
+
+	if len(ids) == 0 {
+		return co.serviceInfos
+	}
+	tmp := make(map[string]*pb.ServiceInfo)
+	for _, id := range ids {
+		tmp[id] = co.serviceInfos[id]
+	}
+	return tmp
 }
