@@ -23,6 +23,7 @@ type taskManager struct {
 	mux          sync.Mutex
 	serviceInfos map[string]*pb.ServiceInfo
 	clientConns  map[string]pb.CoreClient
+	TaskManagerBufferMonitor
 }
 
 func NewTaskManager(addr, coordAddr string) *taskManager {
