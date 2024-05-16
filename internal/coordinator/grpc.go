@@ -31,3 +31,16 @@ func (c *grpcServer) SendHeartBeat(ctx context.Context, req *pb.HeartBeatReq) (r
 	resp.ServiceInfos = c.coord.GetServiceInfo()
 	return resp, nil
 }
+
+func (c *grpcServer) SubmitOpTask(ctx context.Context, req *pb.SubmitOpTaskReq) (resp *pb.SubmitOpTaskResp, err error) {
+	resp = new(pb.SubmitOpTaskResp)
+
+	slog.Debug("Recv submit op task.", slog.Any("req", req))
+
+	err = c.coord.SubmitOpTask(req.Digraph)
+	if err != nil {
+		slog.Error("Recv op task.", slog.Any("err", err))
+	}
+
+	return resp, nil
+}

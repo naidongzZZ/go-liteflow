@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"sync"
 
 	"go-liteflow/internal/pkg"
 	pb "go-liteflow/pb"
 
 	"github.com/google/uuid"
+	"github.com/jinzhu/copier"
 	"google.golang.org/grpc"
 )
 
@@ -20,7 +22,12 @@ type coordinator struct {
 	gSrv *grpcServer
 
 	mux          sync.Mutex
+	// key: coordinator_id or task_manager_id
 	serviceInfos map[string]*pb.ServiceInfo
+
+	// key: client_id, val: pb.disgraph
+	digraphMux sync.Mutex
+	taskDigraph map[string]*pb.Digraph
 }
 
 func NewCoordinator(addr string) *coordinator {
@@ -37,6 +44,7 @@ func NewCoordinator(addr string) *coordinator {
 			ServiceType: pb.ServiceType_Coordinator,
 		},
 		serviceInfos: make(map[string]*pb.ServiceInfo),
+		taskDigraph: make(map[string]*pb.Digraph),
 	}
 
 	srv := grpc.NewServer()
@@ -92,4 +100,41 @@ func (co *coordinator) GetServiceInfo(ids ...string) map[string]*pb.ServiceInfo 
 		tmp[id] = co.serviceInfos[id]
 	}
 	return tmp
+}
+
+func (co *coordinator) SubmitOpTask(digraph *pb.Digraph) (err error) {
+
+	// generate op task id
+
+	// generate op task instance by parallelism
+
+	if len(digraph.Adj) != 1 {
+		return errors.New("illegal OpTask")
+	}
+
+	result := make([]*pb.OperatorTask, 0)
+
+	upstreamOpTaskId := make([]string, 0)
+	cur := digraph.Adj[0]
+	for cur != nil {
+
+		curLevel := make([]*pb.OperatorTask, 0, int(cur.Parallelism))
+		for i := 0; i < int(cur.Parallelism); i++ {
+			curLevel[i] = new(pb.OperatorTask)
+			copier.Copy(curLevel[i], cur)
+
+			
+			curLevel[i].Id = strconv.Itoa(i) + "-" + uuid.New().String()
+		}
+		
+
+
+		if len(cur.Downstream) == 0 {
+			cur = nil
+		} else {
+			cur = cur.Downstream[0]
+		}
+	}
+
+	return nil
 }

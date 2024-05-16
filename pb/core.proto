@@ -26,8 +26,10 @@ service core {
 message Digraph {
   // graph task id
   string graph_id = 1;
-  //
+  // tasks
   repeated OperatorTask adj = 2;
+  // client id
+  string client_id = 3;  
 }
 
 // operator type
