@@ -28,8 +28,6 @@ message Digraph {
   string graph_id = 1;
   // tasks
   repeated OperatorTask adj = 2;
-  // client id
-  string client_id = 3;  
 }
 
 // operator type
@@ -37,6 +35,7 @@ enum OpType {
   OpUnknown = 0;
   Map = 1;
   Reduce = 2;
+  KeyBy = 3;
 }
 
 // task status

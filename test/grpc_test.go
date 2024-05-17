@@ -64,3 +64,7 @@ func TestEventChannel(t *testing.T) {
 	}
 
 }
+
+func TestCoordinatorSubmitOpTask(t *testing.T) {
+
+}
