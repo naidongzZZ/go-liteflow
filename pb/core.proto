@@ -6,7 +6,7 @@ option go_package = ".";
 
 service core {
   // Event channels between task managers
-  rpc EventChannel(stream EventChannelReq) returns (stream EventChannelResp) {}
+  rpc EventChannel(stream Event) returns (stream Event) {}
   // todo raft
   // Send heart beat to coordinator or Ask if the coordinator is alive
   rpc SendHeartBeat(HeartBeatReq) returns (HeartBeatResp) {}
@@ -66,6 +66,13 @@ message OperatorTask {
   repeated OperatorTask downstream = 9;
 }
 
+// event type
+enum EventType {
+  DataOutPut = 0;
+  Notify = 1;
+  ACK = 2;
+}
+
 message Event {
   string id = 1;
   // occurrence time
@@ -74,8 +81,10 @@ message Event {
   string source_op_task_id = 3;
   // target task
   string target_op_task_id = 4;
+  // event type
+  EventType eventType = 5;
   // event data
-  bytes data = 5;
+  bytes data = 6;
 }
 
 message EventChannelReq { repeated Event events = 1; }

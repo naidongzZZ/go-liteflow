@@ -5,15 +5,25 @@ import (
 	"encoding/binary"
 	"errors"
 	pb "go-liteflow/pb"
-	"math"
 	"math/rand"
 	"time"
 )
 
 // ever taskmanager has one monitor to manager buffer info
 type TaskManagerBufferMonitor struct {
-	bufferPool map[string]*Buffer          // taskId to buffer
-	taskPool   map[string]*pb.OperatorTask //taskId to operator
+	bufferPool      map[string]*Buffer                    // taskId to buffer
+	taskPool        map[string]*pb.OperatorTask           //taskId to operator
+	notifyChan      chan []any                            // index-0:opId,index-1:currentTaskId,index-2:targetTaskId,index-3:credit
+	eventChanClient map[string]pb.Core_EventChannelClient //opId to client
+}
+
+func NewTaskManagerBufferMonitor() *TaskManagerBufferMonitor {
+	return &TaskManagerBufferMonitor{
+		bufferPool:      make(map[string]*Buffer),
+		taskPool:        make(map[string]*pb.OperatorTask),
+		notifyChan:      make(chan []any),
+		eventChanClient: make(map[string]pb.Core_EventChannelClient),
+	}
 }
 
 // register a task to task monitor
@@ -34,7 +44,8 @@ func (t *TaskManagerBufferMonitor) RegisterOperatorTask(task *pb.OperatorTask) e
 			}
 			buffer := t.bufferPool[taskId]
 			if buffer.Size-buffer.Usage > 1024 {
-				t.Notify(1024, taskId)
+				upstream := task.Upstream[rand.Intn(len(task.Upstream))]
+				t.notifyChan <- []any{upstream.OpId, taskId, upstream.Id, 1024}
 			} else {
 				time.Sleep(1 * time.Second)
 			}
@@ -53,49 +64,14 @@ func (t *TaskManagerBufferMonitor) TaskBufferInfoMonitor(taskId string) *Buffer 
 	return t.bufferPool[taskId]
 }
 
-// Notify upstream push data
-func (t *TaskManagerBufferMonitor) Notify(credit int, taskId string) error {
-	task := t.taskPool[taskId]
-	if task == nil {
-		return errors.New("has no task in this monitor task pool")
-	}
-	rand.NewSource(time.Now().Unix())
-	upstream := task.Upstream[rand.Intn(len(task.Upstream))]
-	downstreamNode := *GetOperatorNodeClient(upstream.OpId)
-	bytesBuffer := bytes.NewBuffer([]byte{})
-	binary.Write(bytesBuffer, binary.BigEndian, uint16(1024))
-	return downstreamNode.Send(NewSingleEventReq(bytesBuffer.Bytes(), taskId, upstream.Id))
-}
-
-// input data to rel task pool from upstream taskmanager
-func (t *TaskManagerBufferMonitor) DataInput(event *pb.EventChannelReq) error {
-	events := event.Events
-	if len(events) == 0 {
-		return errors.New("no input data")
-	}
-	e := events[0]
-	dataFlow := decodeByteData(e.Data)
-	buffer := t.bufferPool[e.TargetOpTaskId]
-	result := buffer.AddData(InputData, dataFlow)
-	if !result {
-		return errors.New("data write error")
-	}
-	return nil
-}
-
-// ouput data to specify downstream taskmanager node
-func (t *TaskManagerBufferMonitor) DataOutput(taskId string, targetTaskId string, dataFlow [][]byte, downstreamNode pb.Core_EventChannelClient) error {
-	return downstreamNode.Send(NewSingleEventReq(encodeByteData(dataFlow), taskId, targetTaskId))
-}
-
 // initial a buffer for a new task
 func (t *TaskManagerBufferMonitor) initialTaskBuffer(taskId string) {
 	size := 1024 * 1024 * 10 // pending......
 	buffer := NewBuffer(size, taskId)
 	t.bufferPool[taskId] = buffer
 	// default send 30% size credit to upstream
-	credit := int(math.Round(float64(buffer.Size) * 0.3))
-	t.Notify(credit, buffer.TaskId)
+	// credit := int(math.Round(float64(buffer.Size) * 0.3))
+	// t.Notify(credit, buffer.TaskId)
 }
 
 // release buffer (if has savepoint config, maybe need to save the cache buffer data?)
@@ -106,6 +82,7 @@ func (t *TaskManagerBufferMonitor) releaseTaskBuffer(taskId string) error {
 	// remove pool
 	delete(t.bufferPool, taskId)
 	delete(t.taskPool, taskId)
+	delete(t.eventChanClient, taskId)
 	return nil
 }
 

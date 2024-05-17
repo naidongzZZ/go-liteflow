@@ -57,8 +57,8 @@ func (c *coreClient) EventChannel(ctx context.Context, opts ...grpc.CallOption) 
 }
 
 type Core_EventChannelClient interface {
-	Send(*EventChannelReq) error
-	Recv() (*EventChannelResp, error)
+	Send(*Event) error
+	Recv() (*Event, error)
 	grpc.ClientStream
 }
 
@@ -66,12 +66,12 @@ type coreEventChannelClient struct {
 	grpc.ClientStream
 }
 
-func (x *coreEventChannelClient) Send(m *EventChannelReq) error {
+func (x *coreEventChannelClient) Send(m *Event) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *coreEventChannelClient) Recv() (*EventChannelResp, error) {
-	m := new(EventChannelResp)
+func (x *coreEventChannelClient) Recv() (*Event, error) {
+	m := new(Event)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -220,8 +220,8 @@ func _Core_EventChannel_Handler(srv interface{}, stream grpc.ServerStream) error
 }
 
 type Core_EventChannelServer interface {
-	Send(*EventChannelResp) error
-	Recv() (*EventChannelReq, error)
+	Send(*Event) error
+	Recv() (*Event, error)
 	grpc.ServerStream
 }
 
@@ -229,12 +229,12 @@ type coreEventChannelServer struct {
 	grpc.ServerStream
 }
 
-func (x *coreEventChannelServer) Send(m *EventChannelResp) error {
+func (x *coreEventChannelServer) Send(m *Event) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *coreEventChannelServer) Recv() (*EventChannelReq, error) {
-	m := new(EventChannelReq)
+func (x *coreEventChannelServer) Recv() (*Event, error) {
+	m := new(Event)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
