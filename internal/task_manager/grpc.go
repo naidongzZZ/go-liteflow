@@ -12,6 +12,9 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type grpcServer struct {
@@ -162,4 +165,8 @@ func NewAckEventReq(ask string, sourceTaskId string, targetTaskId string) *pb.Ev
 
 func NewCoupleEventsReq() *pb.EventChannelReq {
 	return nil
+}
+
+func (c * grpcServer) DirectedEventChannel(srv pb.Core_DirectedEventChannelServer) error {
+	return status.Errorf(codes.Unimplemented, "method DirectedEventChannel not implemented")
 }

@@ -30,7 +30,7 @@ func TestEventChannel(t *testing.T) {
 			t.Log(err)
 			return
 		}
-		if err = stream.Send(&pb.EventChannelReq{Events: []*pb.Event{{Data: []byte("hello")}}}); err != nil {
+		if err = stream.Send(&pb.Event{Data: []byte("hello")}); err != nil {
 			t.Log(err)
 			return
 		}

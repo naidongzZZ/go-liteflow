@@ -2,6 +2,7 @@ package task_manager
 
 import (
 	"context"
+	"go-liteflow/internal/pkg/operator"
 	pb "go-liteflow/pb"
 	"log/slog"
 	"net"
@@ -132,4 +133,32 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 
 func (tm *taskManager) ID() string {
 	return tm.taskManagerInfo.Id
+}
+
+func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, out chan *pb.Event) (err error) {
+
+	for {
+		select{
+		case ev := <- in:
+			if ev.EventType == pb.EventType_EtUnknown {
+				return
+			}
+
+			output := operator.OpFn(opTask.ClientId, opTask.OpId, opTask.OpType, ev.Data)
+
+			if len(opTask.Downstream) != 0 && out != nil {
+				out <- &pb.Event{
+					Id: 			uuid.NewString(), 
+					EventTime: 		ev.EventTime, 
+					SourceOpTaskId: opTask.Id,
+					TargetOpTaskId: opTask.Downstream[0].Id,
+					Data:			output,
+				}
+			}
+			
+		case <- ctx.Done():
+			return 
+		}
+	}
+	return nil
 }
