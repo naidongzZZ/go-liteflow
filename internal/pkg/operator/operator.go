@@ -1,14 +1,46 @@
 package operator
 
 import (
+	"context"
+	"fmt"
 	pb "go-liteflow/pb"
+	"sync"
+
 )
 
+var (
+	_mux sync.Mutex
+	_operatorFn = make(map[string]OpFnGenerator)
+)
 
-func OpFn(clientId, opId string, opType pb.OpType, data []byte) []byte {
+type OpFn func(context.Context, []byte) []byte
 
-	return nil
+type OpFnGenerator func() OpFn
+
+func OperatorFnKey(opId string, opType pb.OpType) string {
+	return fmt.Sprintf("%s_%s", opType, opId)
 }
 
-// todo 
-//func MapOp[K comparable, V any] (map [K]V) 
+func RegisterOpFn(opId string, opType pb.OpType, fn OpFnGenerator) {
+	_mux.Lock()
+	defer _mux.Unlock()
+	_operatorFn[OperatorFnKey(opId, opType)] = fn
+}
+
+func UnregisterOpFn(opId string, opType pb.OpType) {
+	_mux.Lock()
+	defer _mux.Unlock()
+	delete(_operatorFn, OperatorFnKey(opId, opType))
+}
+
+func GetOpFn(cId, opId string, opType pb.OpType) (f OpFn, ok bool) {
+
+	_mux.Lock()
+	defer _mux.Unlock()
+
+	fnGenerator, ok :=  _operatorFn[OperatorFnKey(opId, opType)]
+	if ok {
+		return fnGenerator(), ok
+	}
+	return
+}

@@ -2,6 +2,7 @@ package task_manager
 
 import (
 	"context"
+	"errors"
 	"go-liteflow/internal/pkg/operator"
 	pb "go-liteflow/pb"
 	"log/slog"
@@ -137,6 +138,11 @@ func (tm *taskManager) ID() string {
 
 func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, out chan *pb.Event) (err error) {
 
+	opFn, ok := operator.GetOpFn(opTask.ClientId, opTask.OpId, opTask.OpType)
+	if !ok {
+		return errors.New("unsupported Operator Func")
+	}
+
 	for {
 		select{
 		case ev := <- in:
@@ -144,21 +150,27 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, 
 				return
 			}
 
-			output := operator.OpFn(opTask.ClientId, opTask.OpId, opTask.OpType, ev.Data)
+			slog.Info("operator input." , slog.Any("opTaskId", opTask.Id), slog.Any("event", ev))
+
+			output := opFn(ctx, ev.Data)
 
 			if len(opTask.Downstream) != 0 && out != nil {
+				slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("res", output))
+
+				// todo distribute target opTaskId
+
 				out <- &pb.Event{
 					Id: 			uuid.NewString(), 
+					EventType:      pb.EventType_DataOutPut,
 					EventTime: 		ev.EventTime, 
 					SourceOpTaskId: opTask.Id,
 					TargetOpTaskId: opTask.Downstream[0].Id,
-					Data:			output,
-				}
+					Data:			output,}
 			}
 			
 		case <- ctx.Done():
+			slog.Info("operator done.", slog.Any("opTaskId", opTask.Id), slog.Any("err", ctx.Err()))
 			return 
 		}
 	}
-	return nil
 }
