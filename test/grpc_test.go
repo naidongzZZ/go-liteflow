@@ -47,7 +47,7 @@ func TestEventChannel(t *testing.T) {
 
 	// start server
 	srv := grpc.NewServer()
-	pb.RegisterCoreServer(srv, task_manager.NewGrpcServer())
+	pb.RegisterCoreServer(srv, task_manager.NewTaskManager("", ""))
 	go func() {
 		// auto stop server
 		<- waitc

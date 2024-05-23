@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"go-liteflow/internal/core"
 	pb "go-liteflow/pb"
 	"io"
 	"log"
@@ -17,16 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type grpcServer struct {
-	core.Comm
-	tm *taskManager
-}
-
-func NewGrpcServer() *grpcServer {
-	return &grpcServer{}
-}
-
-func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
+func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -49,7 +39,7 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 			// recv notify info
 			selfTaskId := event.TargetOpTaskId
 			targetTaskId := event.SourceOpTaskId
-			bf := c.tm.bufferPool[selfTaskId]
+			bf := tm.bufferPool[selfTaskId]
 			if bf == nil {
 				// send response to upstream current download stream has closed rel task
 				// stream.Send()
@@ -66,9 +56,9 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 					sendData := encodeByteData(data)
 					// push data
 					stream.Send(NewSingleEventReq(sendData, selfTaskId, targetTaskId))
-					// ack data push result 
+					// ack data push result
 					ack, _ := stream.Recv()
-					if ack.EventType != pb.EventType_ACK ||  string(ack.Data) == "false" {
+					if ack.EventType != pb.EventType_ACK || string(ack.Data) == "false" {
 						return errors.New("data out put error")
 					}
 					return nil
@@ -82,7 +72,7 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 	}()
 
 	wg.Add(1)
-	notifyc := c.tm.notifyChan
+	notifyc := tm.notifyChan
 	// client , s r s
 	go func(notifyc chan []any) {
 		defer wg.Done()
@@ -91,7 +81,7 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 			currentTaskId, _ := notify[1].(string)
 			targetTaskId, _ := notify[2].(string)
 			credit, _ := notify[3].(int16)
-			stream := c.tm.GetOperatorNodeClient(opId)
+			stream := tm.GetOperatorNodeClient(opId)
 			if stream != nil {
 				bytesBuffer := bytes.NewBuffer([]byte{})
 				binary.Write(bytesBuffer, binary.BigEndian, uint16(credit))
@@ -104,7 +94,7 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 				event, err := stream.Recv()
 				if err == nil && event.EventType != pb.EventType_ACK {
 					// data input
-					bf := c.tm.bufferPool[currentTaskId]
+					bf := tm.bufferPool[currentTaskId]
 					if bf != nil {
 						dataFlow := decodeByteData(event.Data)
 						res := bf.AddData(InputData, dataFlow)
@@ -122,7 +112,7 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 			}
 		}
 	}(notifyc)
-	
+
 	wg.Wait()
 	return nil
 }
@@ -151,22 +141,42 @@ func NewSingleEventReq(data []byte, sourceTaskId string, targetTaskId string) *p
 	}
 }
 
-
 func NewAckEventReq(ask string, sourceTaskId string, targetTaskId string) *pb.Event {
 	return &pb.Event{
 		EventTime:      time.Now().Unix(),
 		Data:           []byte(ask),
 		SourceOpTaskId: sourceTaskId,
 		TargetOpTaskId: targetTaskId,
-		EventType: pb.EventType_ACK,
+		EventType:      pb.EventType_ACK,
 	}
 }
-
 
 func NewCoupleEventsReq() *pb.EventChannelReq {
 	return nil
 }
 
-func (c * grpcServer) DirectedEventChannel(srv pb.Core_DirectedEventChannelServer) error {
+func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq) (resp *pb.DeployOpTaskResp, err error) {
+	resp = new(pb.DeployOpTaskResp)
+	tm.digraphMux.Lock()
+	defer tm.digraphMux.Unlock()
+
+	tm.taskDigraph[req.ClientId] = req.Digraph
+
+	for _, optaskId := range req.OpTaskIds {
+		for i := range req.Digraph.Adj {
+			if optaskId == req.Digraph.Adj[i].Id {
+				slog.Debug("Deploy Optask:%s to TaskManager:%s", optaskId, tm.ID())
+				tm.tasks[optaskId] = req.Digraph.Adj[i]
+			}
+		}
+	}
+
+	return resp, nil
+}
+func (tm *taskManager) ManageOpTask(ctx context.Context, req *pb.ManageOpTaskReq) (resp *pb.ManageOpTaskResp, err error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ManageOpTask not implemented")
+}
+
+func (tm *taskManager) DirectedEventChannel(srv pb.Core_DirectedEventChannelServer) error {
 	return status.Errorf(codes.Unimplemented, "method DirectedEventChannel not implemented")
 }

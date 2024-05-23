@@ -188,3 +188,6 @@ func (co *coordinator) SubmitOpTask(digraph *pb.Digraph) (err error) {
 
 	return nil
 }
+
+func (co *coordinator) schedule() {
+}

@@ -2,6 +2,7 @@ package task_manager
 
 import (
 	"context"
+	"go-liteflow/internal/core"
 	"errors"
 	"go-liteflow/internal/pkg/operator"
 	pb "go-liteflow/pb"
@@ -15,17 +16,24 @@ import (
 )
 
 type taskManager struct {
+	core.Comm
+
 	taskManagerInfo *pb.ServiceInfo
 
 	coordinatorInfo *pb.ServiceInfo
 
-	srv  *grpc.Server
-	gSrv *grpcServer
+	srv *grpc.Server
 
 	mux          sync.Mutex
 	serviceInfos map[string]*pb.ServiceInfo
 	clientConns  map[string]pb.CoreClient
 	TaskManagerBufferMonitor
+
+	digraphMux sync.Mutex
+	// key: client_id, val: pb.disgraph
+	taskDigraph map[string]*pb.Digraph
+	// key: optask_id, val: pb.OperatorTask
+	tasks map[string]*pb.OperatorTask
 }
 
 func NewTaskManager(addr, coordAddr string) *taskManager {
@@ -45,15 +53,12 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		},
 		serviceInfos: make(map[string]*pb.ServiceInfo),
 		clientConns:  make(map[string]pb.CoreClient),
+		taskDigraph:  make(map[string]*pb.Digraph),
+		tasks:        make(map[string]*pb.OperatorTask),
 	}
 
-	srv := grpc.NewServer()
-
-	gSrv := &grpcServer{tm: tm}
-	pb.RegisterCoreServer(srv, gSrv)
-
-	tm.gSrv = gSrv
-	tm.srv = srv
+	tm.srv = grpc.NewServer()
+	pb.RegisterCoreServer(tm.srv, tm)
 
 	return tm
 }
@@ -176,4 +181,23 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, 
 			return
 		}
 	}
+}
+
+func (tm *taskManager) schedule() {
+	go func() {
+
+		for {
+			time.Sleep(1 * time.Second)
+		
+			/*tm.digraphMux.Lock()
+			for optaskId, task := range tm.tasks {
+				if task.State == pb.TaskStatus_Ready {
+					go tm.Invoke(tm.tasks[optaskId])
+				}
+			}*/
+
+			tm.digraphMux.Unlock()
+		}
+
+	}()
 }
