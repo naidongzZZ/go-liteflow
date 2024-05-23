@@ -2,11 +2,10 @@ package test
 
 import (
 	"context"
-	"encoding/json"
 	"go-liteflow/internal/pkg/operator"
 	"go-liteflow/internal/task_manager"
 	pb "go-liteflow/pb"
-	"strings"
+	"plugin"
 	"sync"
 	"testing"
 	"time"
@@ -14,13 +13,30 @@ import (
 
 func TestInvode(t *testing.T) {
 
+	p, err := plugin.Open("plugins/mr.so")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sym, err := p.Lookup("MapOpFn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	MapOpFn := sym.(func(opId string) operator.OpFn)
+
+	sym2, err := p.Lookup("ReduceOpFn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ReduceOpFn := sym2.(func(opId string) operator.OpFn)
+
 	operator.RegisterOpFn("", pb.OpType_Map, MapOpFn)
 	operator.RegisterOpFn("", pb.OpType_Reduce, ReduceOpFn)
 
 	tm := task_manager.NewTaskManager("", "")
-	in := make(chan *pb.Event, 10)
-	tmp := make(chan *pb.Event, 10)
-	out := make(chan *pb.Event, 10)
+	in := make(chan *pb.Event, 1000)
+	tmp := make(chan *pb.Event, 1000)
+	out := make(chan *pb.Event, 1000)
 
 	opTaskMap := &pb.OperatorTask{
 		Id: 		"opTaskIdMap1",
@@ -73,34 +89,5 @@ func TestInvode(t *testing.T) {
 	//assert.Equal(t, 2, len(out))
 }
 
-func MapOpFn() operator.OpFn {
-	return func(ctx context.Context, input []byte) (output []byte) {
-	
-		res := make([]map[string]int, 0)
-	
-		for _, word := range strings.Split(string(input) , " ") {
-			res = append(res, map[string]int {strings.Trim(word, " "): 1})
-		}
-	
-		bytes, _ := json.Marshal(res)
-		return bytes
-	}
-}
 
 
-
-func ReduceOpFn() operator.OpFn {
-	var m = make(map[string]int)
-
-	return func(ctx context.Context, input []byte) (output []byte){
-		in := make([]map[string]int, 0)
-		_ = json.Unmarshal(input, &in)
-		for _, kvs := range in {
-			for k, v := range kvs {
-				m[k] +=v
-			}
-		}
-		output, _ = json.Marshal(m)
-		return output
-	}
-}

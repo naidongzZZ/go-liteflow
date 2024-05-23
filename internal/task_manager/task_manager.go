@@ -144,33 +144,36 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, 
 	}
 
 	for {
-		select{
-		case ev := <- in:
+		select {
+		case ev := <-in:
 			if ev.EventType == pb.EventType_EtUnknown {
 				return
 			}
 
-			slog.Info("operator input." , slog.Any("opTaskId", opTask.Id), slog.Any("event", ev))
+			slog.Info("operator input.", slog.Any("opTaskId", opTask.Id), slog.Any("event", ev))
 
-			output := opFn(ctx, ev.Data)
+			output := opFn(ctx, ev)
 
 			if len(opTask.Downstream) != 0 && out != nil {
-				slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("res", output))
+				slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("events", output))
 
 				// todo distribute target opTaskId
 
-				out <- &pb.Event{
-					Id: 			uuid.NewString(), 
-					EventType:      pb.EventType_DataOutPut,
-					EventTime: 		ev.EventTime, 
-					SourceOpTaskId: opTask.Id,
-					TargetOpTaskId: opTask.Downstream[0].Id,
-					Data:			output,}
+				for _, oev := range output {
+					out <- &pb.Event{
+						Id:             uuid.NewString(),
+						EventType:      pb.EventType_DataOutPut,
+						EventTime:      ev.EventTime,
+						SourceOpTaskId: opTask.Id,
+						TargetOpTaskId: opTask.Downstream[0].Id,
+						Key:            oev.Key,
+						Data:           oev.Data}
+				}
 			}
-			
-		case <- ctx.Done():
+
+		case <-ctx.Done():
 			slog.Info("operator done.", slog.Any("opTaskId", opTask.Id), slog.Any("err", ctx.Err()))
-			return 
+			return
 		}
 	}
 }

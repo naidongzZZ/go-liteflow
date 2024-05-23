@@ -5,17 +5,18 @@ import (
 	"fmt"
 	pb "go-liteflow/pb"
 	"sync"
-
 )
 
 var (
-	_mux sync.Mutex
+	_mux        sync.Mutex
 	_operatorFn = make(map[string]OpFnGenerator)
 )
 
-type OpFn func(context.Context, []byte) []byte
+type (
+	OpFn func(context.Context, ...*pb.Event) []*pb.Event
 
-type OpFnGenerator func() OpFn
+	OpFnGenerator func(opId string) OpFn
+)
 
 func OperatorFnKey(opId string, opType pb.OpType) string {
 	return fmt.Sprintf("%s_%s", opType, opId)
@@ -38,9 +39,9 @@ func GetOpFn(cId, opId string, opType pb.OpType) (f OpFn, ok bool) {
 	_mux.Lock()
 	defer _mux.Unlock()
 
-	fnGenerator, ok :=  _operatorFn[OperatorFnKey(opId, opType)]
+	fnGenerator, ok := _operatorFn[OperatorFnKey(opId, opType)]
 	if ok {
-		return fnGenerator(), ok
+		return fnGenerator(opId), ok
 	}
 	return
 }

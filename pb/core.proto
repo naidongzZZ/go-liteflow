@@ -88,6 +88,8 @@ message Event {
   EventType eventType = 5;
   // event data
   bytes data = 6;
+  // event key 
+  string key = 7;
 }
 
 message EventChannelReq { repeated Event events = 1; }
