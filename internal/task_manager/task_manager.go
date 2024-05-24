@@ -45,14 +45,22 @@ type taskManager struct {
 	taskChannels map[string]*Channel
 }
 
-func NewTaskManager(addr, coordAddr string) *taskManager {
+var tm *taskManager
 
+func GetTaskManager() *taskManager {
+	return tm
+}
+
+func NewTaskManager(addr, coordAddr string) *taskManager {
+	if tm != nil {
+		return tm
+	}
 	ranUid, err := uuid.NewRandom()
 	if err != nil {
 		panic(err)
 	}
 
-	tm := &taskManager{
+	tm = &taskManager{
 		taskManagerInfo: &pb.ServiceInfo{
 			Id:          ranUid.String(),
 			ServiceAddr: addr,
@@ -66,7 +74,6 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		taskDigraph:  make(map[string]*pb.Digraph),
 		tasks:        make(map[string]*pb.OperatorTask),
 	}
-
 	tm.srv = grpc.NewServer()
 	pb.RegisterCoreServer(tm.srv, tm)
 
@@ -155,6 +162,21 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 
 func (tm *taskManager) ID() string {
 	return tm.taskManagerInfo.Id
+}
+
+func (tm *taskManager) GetOperatorNodeClient(opId string) pb.Core_EventChannelClient {
+	var client pb.Core_EventChannelClient
+	var err error
+	client = tm.eventChanClient[opId]
+	if client == nil && tm.clientConns[opId] != nil {
+		client, err = tm.clientConns[opId].EventChannel(context.Background())
+		if err != nil {
+			slog.Error("Failed to create event client : %v", err)
+			return nil
+		}
+		tm.eventChanClient[opId] = client
+	}
+	return client
 }
 
 func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *Channel) (err error) {

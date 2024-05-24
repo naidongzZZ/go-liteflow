@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	pb "go-liteflow/pb"
+	"log/slog"
 	"math/rand"
 	"time"
 )
@@ -13,18 +14,39 @@ import (
 type TaskManagerBufferMonitor struct {
 	bufferPool      map[string]*Buffer                    // taskId to buffer
 	taskPool        map[string]*pb.OperatorTask           //taskId to operator
-	notifyChan      chan []any                            // index-0:opId,index-1:currentTaskId,index-2:targetTaskId,index-3:credit
+	notifyChan      chan NotifyEvent                       
 	eventChanClient map[string]pb.Core_EventChannelClient //opId to client
 }
+
+
+type NotifyEvent struct {
+	opId string
+	sourceTaskId string
+	targetTaskId string
+	credit int16
+}
+
+// 
 
 func NewTaskManagerBufferMonitor() *TaskManagerBufferMonitor {
 	return &TaskManagerBufferMonitor{
 		bufferPool:      make(map[string]*Buffer),
 		taskPool:        make(map[string]*pb.OperatorTask),
-		notifyChan:      make(chan []any),
+		notifyChan:      make(chan NotifyEvent),
 		eventChanClient: make(map[string]pb.Core_EventChannelClient),
 	}
 }
+
+
+func NewNotifyEvent(opId string,sourceTaskId string,targetTaskId string,credit int16) *NotifyEvent{
+	return &NotifyEvent{
+		opId: opId,
+		sourceTaskId: sourceTaskId,
+		targetTaskId: targetTaskId,
+		credit: credit,
+	}
+}
+
 
 // register a task to task monitor
 func (t *TaskManagerBufferMonitor) RegisterOperatorTask(task *pb.OperatorTask) error {
@@ -35,7 +57,7 @@ func (t *TaskManagerBufferMonitor) RegisterOperatorTask(task *pb.OperatorTask) e
 	t.taskPool[task.Id] = task
 	// init buffer
 	t.initialTaskBuffer(task.Id)
-	// assign a thread to manager this task
+	// assign a thread to manager data notify of this task when have enough free buffer space
 	go func(taskId string) {
 		for {
 			if t.taskPool[taskId] == nil || t.bufferPool[taskId] == nil {
@@ -45,12 +67,51 @@ func (t *TaskManagerBufferMonitor) RegisterOperatorTask(task *pb.OperatorTask) e
 			buffer := t.bufferPool[taskId]
 			if buffer.Size-buffer.Usage > 1024 {
 				upstream := task.Upstream[rand.Intn(len(task.Upstream))]
-				t.notifyChan <- []any{upstream.OpId, taskId, upstream.Id, 1024}
+				t.notifyChan <- *NewNotifyEvent(upstream.OpId, taskId, upstream.Id, int16(1024))
 			} else {
 				time.Sleep(1 * time.Second)
 			}
 		}
 	}(task.Id)
+	// assign a thread to manager data recv of this task
+	go func() {
+		for notify := range t.notifyChan {
+			opId := notify.opId
+			currentTaskId := notify.sourceTaskId
+			targetTaskId := notify.targetTaskId
+			credit := notify.credit
+			stream := tm.GetOperatorNodeClient(opId)
+			if stream != nil {
+				bytesBuffer := bytes.NewBuffer([]byte{})
+				binary.Write(bytesBuffer, binary.BigEndian, uint16(credit))
+				// notify upstream
+				err := stream.Send(NewSingleEventReq(bytesBuffer.Bytes(), currentTaskId, targetTaskId))
+				if err != nil {
+					slog.Info("Read all client's msg done \n")
+					continue
+				}
+				// recv input data flow
+				event, err := stream.Recv()
+				if err == nil && event.EventType != pb.EventType_ACK {
+					// data input
+					bf := tm.bufferPool[currentTaskId]
+					if bf != nil {
+						dataFlow := decodeByteData(event.Data)
+						res := bf.AddData(InputData, dataFlow)
+						if !res {
+							slog.Error("data in put error,targetTaskId:%v, selfTaskId:%v", targetTaskId, currentTaskId)
+							stream.Send(NewAckEventReq("false", currentTaskId, targetTaskId))
+						} else {
+							stream.Send(NewAckEventReq("true", currentTaskId, targetTaskId))
+						}
+					} else {
+						slog.Error("data in put error,no rel task buffer,targetTaskId:%v, selfTaskId:%v", targetTaskId, currentTaskId)
+						stream.Send(NewAckEventReq("false", currentTaskId, targetTaskId))
+					}
+				}
+			}
+		}
+	}()
 	return nil
 }
 

@@ -20,7 +20,7 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	// server r s r
+	// server push task output data
 	go func() {
 		defer wg.Done()
 		for {
@@ -43,44 +43,43 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 			if bf == nil {
 				// send response to upstream current download stream has closed rel task
 				// stream.Send()
-				stream.Send(NewSingleEventReq([]byte("false"), selfTaskId, targetTaskId))
+				stream.Send(NewAckEventReq("false", selfTaskId, targetTaskId))
 			} else {
 				// output data
 				var credit int
 				bytesBuffer := bytes.NewBuffer(event.Data)
 				err = binary.Read(bytesBuffer, binary.BigEndian, &credit)
 				if err != nil {
-					log.Fatalf("binary.Read failed: %v", err)
+					slog.Error("binary.Read failed: %v", err)
 				}
 				outputDataFunc := func(data [][]byte) error {
 					sendData := encodeByteData(data)
 					// push data
 					stream.Send(NewSingleEventReq(sendData, selfTaskId, targetTaskId))
 					// ack data push result
-					ack, _ := stream.Recv()
-					if ack.EventType != pb.EventType_ACK || string(ack.Data) == "false" {
+					ack, ackErr := stream.Recv()
+					if ackErr != nil || ack.EventType != pb.EventType_ACK || string(ack.Data) == "false" {
 						return errors.New("data out put error")
 					}
 					return nil
 				}
 				err = bf.RemoveData(OutputData, credit, outputDataFunc)
 				if err != nil {
-					log.Fatalf("data out put error,targetTaskId:%v, selfTaskId:%v", targetTaskId, selfTaskId)
+					slog.Error("data out put error,targetTaskId:%v, selfTaskId:%v", targetTaskId, selfTaskId)
 				}
 			}
 		}
 	}()
-
 	wg.Add(1)
 	notifyc := tm.notifyChan
 	// client , s r s
-	go func(notifyc chan []any) {
+	go func(notifyc chan NotifyEvent) {
 		defer wg.Done()
 		for notify := range notifyc {
-			opId, _ := notify[0].(string)
-			currentTaskId, _ := notify[1].(string)
-			targetTaskId, _ := notify[2].(string)
-			credit, _ := notify[3].(int16)
+			opId := notify.opId
+			currentTaskId := notify.sourceTaskId
+			targetTaskId := notify.targetTaskId
+			credit := notify.credit
 			stream := tm.GetOperatorNodeClient(opId)
 			if stream != nil {
 				bytesBuffer := bytes.NewBuffer([]byte{})
@@ -115,21 +114,6 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 
 	wg.Wait()
 	return nil
-}
-
-func (tm *taskManager) GetOperatorNodeClient(opId string) pb.Core_EventChannelClient {
-	var client pb.Core_EventChannelClient
-	var err error
-	client = tm.eventChanClient[opId]
-	if client == nil && tm.clientConns[opId] != nil {
-		client, err = tm.clientConns[opId].EventChannel(context.Background())
-		if err != nil {
-			slog.Error("Failed to create event client : %v", err)
-			return nil
-		}
-		tm.eventChanClient[opId] = client
-	}
-	return client
 }
 
 func NewSingleEventReq(data []byte, sourceTaskId string, targetTaskId string) *pb.Event {
