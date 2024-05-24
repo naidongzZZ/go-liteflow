@@ -7,6 +7,8 @@ option go_package = ".";
 service core {
   // Event channels between task managers
   rpc EventChannel(stream Event) returns (stream Event) {}
+  // Deprecated: dont use
+  rpc DirectedEventChannel(stream EventChannelReq) returns (EventChannelResp) {}
   // todo raft
   // Send heart beat to coordinator or Ask if the coordinator is alive
   rpc SendHeartBeat(HeartBeatReq) returns (HeartBeatResp) {}
@@ -68,9 +70,10 @@ message OperatorTask {
 
 // event type
 enum EventType {
-  DataOutPut = 0;
-  Notify = 1;
-  ACK = 2;
+  EtUnknown = 0;
+  DataOutPut = 1;
+  Notify = 2;
+  ACK = 3;
 }
 
 message Event {
@@ -85,13 +88,13 @@ message Event {
   EventType eventType = 5;
   // event data
   bytes data = 6;
+  // event key 
+  string key = 7;
 }
 
 message EventChannelReq { repeated Event events = 1; }
 
-message EventChannelResp {
-  map<string, string> ctrl_info = 1;
-}
+message EventChannelResp { map<string, string> ctrl_info = 1; }
 
 // task manager's status or coordinator's status
 enum ServiceStatus {
@@ -101,9 +104,9 @@ enum ServiceStatus {
 }
 
 enum ServiceType {
-   StUnknown = 0;
-   Coordinator = 1;
-   TaskManager = 2;
+  StUnknown = 0;
+  Coordinator = 1;
+  TaskManager = 2;
 }
 
 message ServiceInfo {
@@ -113,9 +116,7 @@ message ServiceInfo {
   string service_addr = 4;
 }
 
-message HeartBeatReq {
-  ServiceInfo service_info = 1;
-}
+message HeartBeatReq { ServiceInfo service_info = 1; }
 
 message HeartBeatResp { map<string, ServiceInfo> service_infos = 1; }
 

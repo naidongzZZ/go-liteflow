@@ -14,7 +14,7 @@ import (
 type TaskManagerBufferMonitor struct {
 	bufferPool      map[string]*Buffer                    // taskId to buffer
 	taskPool        map[string]*pb.OperatorTask           //taskId to operator
-	notifyChan      chan NotifyEvent                            // index-0:opId,index-1:currentTaskId,index-2:targetTaskId,index-3:credit
+	notifyChan      chan NotifyEvent                       
 	eventChanClient map[string]pb.Core_EventChannelClient //opId to client
 }
 

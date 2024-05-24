@@ -2,6 +2,9 @@ package task_manager
 
 import (
 	"context"
+	"errors"
+	"go-liteflow/internal/core"
+	"go-liteflow/internal/pkg/operator"
 	pb "go-liteflow/pb"
 	"log/slog"
 	"net"
@@ -13,17 +16,24 @@ import (
 )
 
 type taskManager struct {
+	core.Comm
+
 	taskManagerInfo *pb.ServiceInfo
 
 	coordinatorInfo *pb.ServiceInfo
 
-	srv  *grpc.Server
-	gSrv *grpcServer
+	srv *grpc.Server
 
 	mux          sync.Mutex
 	serviceInfos map[string]*pb.ServiceInfo
 	clientConns  map[string]pb.CoreClient
 	TaskManagerBufferMonitor
+
+	digraphMux sync.Mutex
+	// key: client_id, val: pb.disgraph
+	taskDigraph map[string]*pb.Digraph
+	// key: optask_id, val: pb.OperatorTask
+	tasks map[string]*pb.OperatorTask
 }
 
 var tm *taskManager
@@ -51,15 +61,12 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		},
 		serviceInfos: make(map[string]*pb.ServiceInfo),
 		clientConns:  make(map[string]pb.CoreClient),
+		taskDigraph:  make(map[string]*pb.Digraph),
+		tasks:        make(map[string]*pb.OperatorTask),
 	}
+	tm.srv = grpc.NewServer()
+	pb.RegisterCoreServer(tm.srv, tm)
 
-	srv := grpc.NewServer()
-
-	gSrv := &grpcServer{tm: tm}
-	pb.RegisterCoreServer(srv, gSrv)
-
-	tm.gSrv = gSrv
-	tm.srv = srv
 	return tm
 }
 
@@ -154,4 +161,64 @@ func (tm *taskManager) GetOperatorNodeClient(opId string) pb.Core_EventChannelCl
 		tm.eventChanClient[opId] = client
 	}
 	return client
+}
+func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, out chan *pb.Event) (err error) {
+
+	opFn, ok := operator.GetOpFn(opTask.ClientId, opTask.OpId, opTask.OpType)
+	if !ok {
+		return errors.New("unsupported Operator Func")
+	}
+
+	for {
+		select {
+		case ev := <-in:
+			if ev.EventType == pb.EventType_EtUnknown {
+				return
+			}
+
+			slog.Info("operator input.", slog.Any("opTaskId", opTask.Id), slog.Any("event", ev))
+
+			output := opFn(ctx, ev)
+
+			if len(opTask.Downstream) != 0 && out != nil {
+				slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("events", output))
+
+				// todo distribute target opTaskId
+
+				for _, oev := range output {
+					out <- &pb.Event{
+						Id:             uuid.NewString(),
+						EventType:      pb.EventType_DataOutPut,
+						EventTime:      ev.EventTime,
+						SourceOpTaskId: opTask.Id,
+						TargetOpTaskId: opTask.Downstream[0].Id,
+						Key:            oev.Key,
+						Data:           oev.Data}
+				}
+			}
+
+		case <-ctx.Done():
+			slog.Info("operator done.", slog.Any("opTaskId", opTask.Id), slog.Any("err", ctx.Err()))
+			return
+		}
+	}
+}
+
+func (tm *taskManager) schedule() {
+	go func() {
+
+		for {
+			time.Sleep(1 * time.Second)
+		
+			/*tm.digraphMux.Lock()
+			for optaskId, task := range tm.tasks {
+				if task.State == pb.TaskStatus_Ready {
+					go tm.Invoke(tm.tasks[optaskId])
+				}
+			}*/
+
+			tm.digraphMux.Unlock()
+		}
+
+	}()
 }

@@ -24,6 +24,8 @@ const _ = grpc.SupportPackageIsVersion7
 type CoreClient interface {
 	// Event channels between task managers
 	EventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_EventChannelClient, error)
+	// Deprecated: dont use
+	DirectedEventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_DirectedEventChannelClient, error)
 	// todo raft
 	// Send heart beat to coordinator or Ask if the coordinator is alive
 	SendHeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error)
@@ -78,6 +80,40 @@ func (x *coreEventChannelClient) Recv() (*Event, error) {
 	return m, nil
 }
 
+func (c *coreClient) DirectedEventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_DirectedEventChannelClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Core_ServiceDesc.Streams[1], "/pb.core/DirectedEventChannel", opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &coreDirectedEventChannelClient{stream}
+	return x, nil
+}
+
+type Core_DirectedEventChannelClient interface {
+	Send(*EventChannelReq) error
+	CloseAndRecv() (*EventChannelResp, error)
+	grpc.ClientStream
+}
+
+type coreDirectedEventChannelClient struct {
+	grpc.ClientStream
+}
+
+func (x *coreDirectedEventChannelClient) Send(m *EventChannelReq) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *coreDirectedEventChannelClient) CloseAndRecv() (*EventChannelResp, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(EventChannelResp)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func (c *coreClient) SendHeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error) {
 	out := new(HeartBeatResp)
 	err := c.cc.Invoke(ctx, "/pb.core/SendHeartBeat", in, out, opts...)
@@ -124,7 +160,7 @@ func (c *coreClient) ReportOpTask(ctx context.Context, in *ReportOpTaskReq, opts
 }
 
 func (c *coreClient) DownloadOpTaskEF(ctx context.Context, in *DownloadReq, opts ...grpc.CallOption) (Core_DownloadOpTaskEFClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Core_ServiceDesc.Streams[1], "/pb.core/DownloadOpTaskEF", opts...)
+	stream, err := c.cc.NewStream(ctx, &Core_ServiceDesc.Streams[2], "/pb.core/DownloadOpTaskEF", opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -161,6 +197,8 @@ func (x *coreDownloadOpTaskEFClient) Recv() (*DownloadResp, error) {
 type CoreServer interface {
 	// Event channels between task managers
 	EventChannel(Core_EventChannelServer) error
+	// Deprecated: dont use
+	DirectedEventChannel(Core_DirectedEventChannelServer) error
 	// todo raft
 	// Send heart beat to coordinator or Ask if the coordinator is alive
 	SendHeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error)
@@ -183,6 +221,9 @@ type UnimplementedCoreServer struct {
 
 func (UnimplementedCoreServer) EventChannel(Core_EventChannelServer) error {
 	return status.Errorf(codes.Unimplemented, "method EventChannel not implemented")
+}
+func (UnimplementedCoreServer) DirectedEventChannel(Core_DirectedEventChannelServer) error {
+	return status.Errorf(codes.Unimplemented, "method DirectedEventChannel not implemented")
 }
 func (UnimplementedCoreServer) SendHeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendHeartBeat not implemented")
@@ -235,6 +276,32 @@ func (x *coreEventChannelServer) Send(m *Event) error {
 
 func (x *coreEventChannelServer) Recv() (*Event, error) {
 	m := new(Event)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _Core_DirectedEventChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(CoreServer).DirectedEventChannel(&coreDirectedEventChannelServer{stream})
+}
+
+type Core_DirectedEventChannelServer interface {
+	SendAndClose(*EventChannelResp) error
+	Recv() (*EventChannelReq, error)
+	grpc.ServerStream
+}
+
+type coreDirectedEventChannelServer struct {
+	grpc.ServerStream
+}
+
+func (x *coreDirectedEventChannelServer) SendAndClose(m *EventChannelResp) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *coreDirectedEventChannelServer) Recv() (*EventChannelReq, error) {
+	m := new(EventChannelReq)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -385,6 +452,11 @@ var Core_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "EventChannel",
 			Handler:       _Core_EventChannel_Handler,
 			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "DirectedEventChannel",
+			Handler:       _Core_DirectedEventChannel_Handler,
 			ClientStreams: true,
 		},
 		{
