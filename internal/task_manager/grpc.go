@@ -2,13 +2,11 @@ package task_manager
 
 import (
 	"bytes"
-	"context"
 	"encoding/binary"
 	"errors"
 	"go-liteflow/internal/core"
 	pb "go-liteflow/pb"
 	"io"
-	"log"
 	"log/slog"
 	"sync"
 	"time"
@@ -27,7 +25,7 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	// server r s r
+	// server push task output data
 	go func() {
 		defer wg.Done()
 		for {
@@ -50,93 +48,35 @@ func (c *grpcServer) EventChannel(stream pb.Core_EventChannelServer) error {
 			if bf == nil {
 				// send response to upstream current download stream has closed rel task
 				// stream.Send()
-				stream.Send(NewSingleEventReq([]byte("false"), selfTaskId, targetTaskId))
+				stream.Send(NewAckEventReq("false", selfTaskId, targetTaskId))
 			} else {
 				// output data
 				var credit int
 				bytesBuffer := bytes.NewBuffer(event.Data)
 				err = binary.Read(bytesBuffer, binary.BigEndian, &credit)
 				if err != nil {
-					log.Fatalf("binary.Read failed: %v", err)
+					slog.Error("binary.Read failed: %v", err)
 				}
 				outputDataFunc := func(data [][]byte) error {
 					sendData := encodeByteData(data)
 					// push data
 					stream.Send(NewSingleEventReq(sendData, selfTaskId, targetTaskId))
-					// ack data push result 
-					ack, _ := stream.Recv()
-					if ack.EventType != pb.EventType_ACK ||  string(ack.Data) == "false" {
+					// ack data push result
+					ack, ackErr := stream.Recv()
+					if ackErr != nil || ack.EventType != pb.EventType_ACK || string(ack.Data) == "false" {
 						return errors.New("data out put error")
 					}
 					return nil
 				}
 				err = bf.RemoveData(OutputData, credit, outputDataFunc)
 				if err != nil {
-					log.Fatalf("data out put error,targetTaskId:%v, selfTaskId:%v", targetTaskId, selfTaskId)
+					slog.Error("data out put error,targetTaskId:%v, selfTaskId:%v", targetTaskId, selfTaskId)
 				}
 			}
 		}
 	}()
-
-	wg.Add(1)
-	notifyc := c.tm.notifyChan
-	// client , s r s
-	go func(notifyc chan []any) {
-		defer wg.Done()
-		for notify := range notifyc {
-			opId, _ := notify[0].(string)
-			currentTaskId, _ := notify[1].(string)
-			targetTaskId, _ := notify[2].(string)
-			credit, _ := notify[3].(int16)
-			stream := c.tm.GetOperatorNodeClient(opId)
-			if stream != nil {
-				bytesBuffer := bytes.NewBuffer([]byte{})
-				binary.Write(bytesBuffer, binary.BigEndian, uint16(credit))
-				// notify upstream
-				err := stream.Send(NewSingleEventReq(bytesBuffer.Bytes(), currentTaskId, targetTaskId))
-				if err != nil {
-					break
-				}
-				// recv input data flow
-				event, err := stream.Recv()
-				if err == nil && event.EventType != pb.EventType_ACK {
-					// data input
-					bf := c.tm.bufferPool[currentTaskId]
-					if bf != nil {
-						dataFlow := decodeByteData(event.Data)
-						res := bf.AddData(InputData, dataFlow)
-						if !res {
-							log.Fatalf("data in put error,targetTaskId:%v, selfTaskId:%v", targetTaskId, currentTaskId)
-							stream.Send(NewAckEventReq("false", currentTaskId, targetTaskId))
-						} else {
-							stream.Send(NewAckEventReq("true", currentTaskId, targetTaskId))
-						}
-					} else {
-						log.Fatalf("data in put error,no rel task buffer,targetTaskId:%v, selfTaskId:%v", targetTaskId, currentTaskId)
-						stream.Send(NewAckEventReq("false", currentTaskId, targetTaskId))
-					}
-				}
-			}
-		}
-	}(notifyc)
-	
 	wg.Wait()
 	return nil
-}
-
-func (tm *taskManager) GetOperatorNodeClient(opId string) pb.Core_EventChannelClient {
-	var client pb.Core_EventChannelClient
-	var err error
-	client = tm.eventChanClient[opId]
-	if client == nil && tm.clientConns[opId] != nil {
-		client, err = tm.clientConns[opId].EventChannel(context.Background())
-		if err != nil {
-			slog.Error("Failed to create event client : %v", err)
-			return nil
-		}
-		tm.eventChanClient[opId] = client
-	}
-	return client
 }
 
 func NewSingleEventReq(data []byte, sourceTaskId string, targetTaskId string) *pb.Event {
@@ -148,17 +88,15 @@ func NewSingleEventReq(data []byte, sourceTaskId string, targetTaskId string) *p
 	}
 }
 
-
 func NewAckEventReq(ask string, sourceTaskId string, targetTaskId string) *pb.Event {
 	return &pb.Event{
 		EventTime:      time.Now().Unix(),
 		Data:           []byte(ask),
 		SourceOpTaskId: sourceTaskId,
 		TargetOpTaskId: targetTaskId,
-		EventType: pb.EventType_ACK,
+		EventType:      pb.EventType_ACK,
 	}
 }
-
 
 func NewCoupleEventsReq() *pb.EventChannelReq {
 	return nil
