@@ -2,8 +2,8 @@ package task_manager
 
 import (
 	"context"
-	"go-liteflow/internal/core"
 	"errors"
+	"go-liteflow/internal/core"
 	"go-liteflow/internal/pkg/operator"
 	pb "go-liteflow/pb"
 	"log/slog"
@@ -24,9 +24,14 @@ type taskManager struct {
 
 	srv *grpc.Server
 
-	mux          sync.Mutex
+	mux sync.Mutex
+	// key: task_manager_id, val: service_addr, info
 	serviceInfos map[string]*pb.ServiceInfo
-	clientConns  map[string]pb.CoreClient
+	// key: service_addr, val: grpc_client
+	clientConns map[string]pb.CoreClient
+	// key：task_manager_id, val: RemoteEventChannel
+	TaskManangerEventChans map[string]*pb.Core_DirectedEventChannelClient
+
 	TaskManagerBufferMonitor
 
 	digraphMux sync.Mutex
@@ -34,6 +39,10 @@ type taskManager struct {
 	taskDigraph map[string]*pb.Digraph
 	// key: optask_id, val: pb.OperatorTask
 	tasks map[string]*pb.OperatorTask
+
+	chMux sync.Mutex
+	// key: optask_id, val: Channel
+	taskChannels map[string]*Channel
 }
 
 func NewTaskManager(addr, coordAddr string) *taskManager {
@@ -47,6 +56,7 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		taskManagerInfo: &pb.ServiceInfo{
 			Id:          ranUid.String(),
 			ServiceAddr: addr,
+			ServiceType: pb.ServiceType_TaskManager,
 		},
 		coordinatorInfo: &pb.ServiceInfo{
 			ServiceAddr: coordAddr,
@@ -70,6 +80,8 @@ func (tm *taskManager) Start(ctx context.Context) {
 		slog.Error("task_manager heart beat.", slog.Any("err", err))
 		return
 	}
+
+	tm.schedule(ctx)
 
 	listener, err := net.Listen("tcp", tm.taskManagerInfo.ServiceAddr)
 	if err != nil {
@@ -100,16 +112,10 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 		for {
 			time.Sleep(5 * time.Second)
 
-			resp, err := coordinatorConn.SendHeartBeat(ctx,
-				&pb.HeartBeatReq{
-					ServiceInfo: &pb.ServiceInfo{
-						Id:            tm.taskManagerInfo.Id,
-						ServiceType:   pb.ServiceType_TaskManager,
-						ServiceStatus: tm.taskManagerInfo.ServiceStatus,
-						ServiceAddr:   tm.taskManagerInfo.ServiceAddr}})
+			req := &pb.HeartBeatReq{ServiceInfo: tm.taskManagerInfo}
+			resp, err := coordinatorConn.SendHeartBeat(ctx, req)
 			if err != nil {
-				slog.Error("send heart beat to coordinator,",
-					slog.Any("err", err))
+				slog.Error("send heart beat to coordinator.", slog.Any("err", err))
 				continue
 			}
 			if resp == nil || len(resp.ServiceInfos) == 0 {
@@ -122,15 +128,25 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 				}
 				tm.mux.Lock()
 				if _, ok := tm.serviceInfos[tmid]; ok {
+					// todo update service info ?
 					tm.mux.Unlock()
 					continue
 				}
+
+				addr := servInfo.ServiceAddr
+				conn, err := grpc.Dial(addr, grpc.WithInsecure())
+				if err != nil {
+					slog.Error("dial task manager", slog.String("addr", addr), slog.Any("err", err))
+					tm.mux.Unlock()
+					continue
+				}
+
+				tm.clientConns[addr] = pb.NewCoreClient(conn)
 				tm.serviceInfos[tmid] = servInfo
 				tm.mux.Unlock()
 			}
 
-			slog.Info("task manager send heart beat.",
-				slog.Int("tm_size", len(resp.ServiceInfos)))
+			slog.Info("task manager send heart beat.", slog.Int("tm_size", len(resp.ServiceInfos)))
 		}
 	}()
 
@@ -141,7 +157,7 @@ func (tm *taskManager) ID() string {
 	return tm.taskManagerInfo.Id
 }
 
-func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, out chan *pb.Event) (err error) {
+func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *Channel) (err error) {
 
 	opFn, ok := operator.GetOpFn(opTask.ClientId, opTask.OpId, opTask.OpType)
 	if !ok {
@@ -150,7 +166,7 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, 
 
 	for {
 		select {
-		case ev := <-in:
+		case ev := <-ch.InputCh():
 			if ev.EventType == pb.EventType_EtUnknown {
 				return
 			}
@@ -159,13 +175,13 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, 
 
 			output := opFn(ctx, ev)
 
-			if len(opTask.Downstream) != 0 && out != nil {
+			if len(opTask.Downstream) != 0 {
 				slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("events", output))
 
 				// todo distribute target opTaskId
 
 				for _, oev := range output {
-					out <- &pb.Event{
+					ch.OutputCh() <- &pb.Event{
 						Id:             uuid.NewString(),
 						EventType:      pb.EventType_DataOutPut,
 						EventTime:      ev.EventTime,
@@ -183,21 +199,41 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, in, 
 	}
 }
 
-func (tm *taskManager) schedule() {
+func (tm *taskManager) schedule(ctx context.Context) {
 	go func() {
 
 		for {
 			time.Sleep(1 * time.Second)
-		
-			/*tm.digraphMux.Lock()
-			for optaskId, task := range tm.tasks {
+
+			var curTask *pb.OperatorTask
+
+			// schedule ready optask
+			tm.digraphMux.Lock()
+			for _, task := range tm.tasks {
 				if task.State == pb.TaskStatus_Ready {
-					go tm.Invoke(tm.tasks[optaskId])
+					curTask = task
+					break
 				}
-			}*/
-
+			}
 			tm.digraphMux.Unlock()
-		}
 
+			if curTask == nil {
+				continue
+			}
+			// new channel
+			tm.chMux.Lock()
+			ch, ok := tm.taskChannels[curTask.Id]
+			if !ok {
+				ch = NewChannel(curTask.Id)
+				tm.taskChannels[curTask.Id] = ch
+			}
+			tm.chMux.Unlock()
+
+			// todo use goroutine pool
+			// run goroutine
+			go tm.Invoke(context.Background(), curTask, ch)
+
+			// todo notify optask status
+		}
 	}()
 }

@@ -177,6 +177,35 @@ func (tm *taskManager) ManageOpTask(ctx context.Context, req *pb.ManageOpTaskReq
 	return nil, status.Errorf(codes.Unimplemented, "method ManageOpTask not implemented")
 }
 
-func (tm *taskManager) DirectedEventChannel(srv pb.Core_DirectedEventChannelServer) error {
-	return status.Errorf(codes.Unimplemented, "method DirectedEventChannel not implemented")
+func (tm *taskManager) DirectedEventChannel(srv pb.Core_DirectedEventChannelServer) (err error) {
+
+	for {
+		eventChannelReq, e := srv.Recv()
+		if e == io.EOF {
+			return
+		}
+		if e != nil {
+			slog.Error("directed channel recv.", slog.Any("err", e))
+			return
+		}
+		if eventChannelReq == nil || len(eventChannelReq.Events) == 0 {
+			continue
+		}
+
+		tm.chMux.Lock()
+		for _, ev := range eventChannelReq.Events {
+			ch, ok := tm.taskChannels[ev.TargetOpTaskId]
+			if !ok || ch == nil {
+				// todo ack ?
+				continue
+			}
+
+			subCtx, cancel := context.WithTimeout(context.TODO(), 100*time.Millisecond)
+			ch.PutInputCh(subCtx, ev)
+			cancel()
+		}
+		tm.chMux.Unlock()
+
+	}
+	return err
 }
