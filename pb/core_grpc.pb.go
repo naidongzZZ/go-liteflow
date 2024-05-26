@@ -26,7 +26,7 @@ type CoreClient interface {
 	EventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_EventChannelClient, error)
 	// Deprecated: dont use
 	DirectedEventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_DirectedEventChannelClient, error)
-	// todo raft
+	// TODO raft
 	// Send heart beat to coordinator or Ask if the coordinator is alive
 	SendHeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error)
 	// Submit tasks to the coordinator
@@ -199,7 +199,7 @@ type CoreServer interface {
 	EventChannel(Core_EventChannelServer) error
 	// Deprecated: dont use
 	DirectedEventChannel(Core_DirectedEventChannelServer) error
-	// todo raft
+	// TODO raft
 	// Send heart beat to coordinator or Ask if the coordinator is alive
 	SendHeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error)
 	// Submit tasks to the coordinator

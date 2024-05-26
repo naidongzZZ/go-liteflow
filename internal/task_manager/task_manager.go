@@ -30,7 +30,7 @@ type taskManager struct {
 	// key: service_addr, val: grpc_client
 	clientConns map[string]pb.CoreClient
 	// key：task_manager_id, val: RemoteEventChannel
-	TaskManangerEventChans map[string]*pb.Core_DirectedEventChannelClient
+	TaskManangerEventChans map[string]*Channel
 
 	TaskManagerBufferMonitor
 
@@ -135,7 +135,7 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 				}
 				tm.mux.Lock()
 				if _, ok := tm.serviceInfos[tmid]; ok {
-					// todo update service info ?
+					// TODO update service info ?
 					tm.mux.Unlock()
 					continue
 				}
@@ -148,7 +148,16 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 					continue
 				}
 
-				tm.clientConns[addr] = pb.NewCoreClient(conn)
+				client := pb.NewCoreClient(conn)
+				ch, err := NewChannelWithClient(context.Background(), tmid, client)
+				if err != nil {
+					slog.Error("new channel.", slog.Any("err", err))
+					tm.mux.Unlock()
+					continue
+				}
+
+				tm.clientConns[addr] = client
+				tm.TaskManangerEventChans[tmid] = ch
 				tm.serviceInfos[tmid] = servInfo
 				tm.mux.Unlock()
 			}
@@ -186,6 +195,26 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *
 		return errors.New("unsupported Operator Func")
 	}
 
+	downstreamCh := make(map[string]*Channel)
+	tm.chMux.Lock()
+	for _, ds := range opTask.Downstream {
+		tmp, ok := tm.taskChannels[ds.Id]
+		if !ok {
+			tm.mux.Lock()
+			// TODO not found task manager
+			tmp, ok = tm.TaskManangerEventChans[ds.TaskManagerId]
+			if !ok {
+				slog.Info("not found channel.", slog.String("downstream", ds.Id))
+				tm.mux.Unlock()
+				tm.chMux.Unlock()
+				return
+			}
+			tm.mux.Unlock()
+		}
+		downstreamCh[ds.Id] = tmp
+	}
+	tm.chMux.Unlock()
+
 	for {
 		select {
 		case ev := <-ch.InputCh():
@@ -200,15 +229,23 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *
 			if len(opTask.Downstream) != 0 {
 				slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("events", output))
 
-				// todo distribute target opTaskId
+				// TODO distribute target opTaskId
 
 				for _, oev := range output {
-					ch.OutputCh() <- &pb.Event{
+					// TODO which opTaskId ?
+					dsId := opTask.Downstream[0].Id
+					downstream, ok := downstreamCh[dsId]
+					if !ok {
+						slog.Error("not found downstream.", slog.String("optaskId", dsId))
+						return
+					}
+
+					downstream.InputCh() <- &pb.Event{
 						Id:             uuid.NewString(),
 						EventType:      pb.EventType_DataOutPut,
 						EventTime:      ev.EventTime,
 						SourceOpTaskId: opTask.Id,
-						TargetOpTaskId: opTask.Downstream[0].Id,
+						TargetOpTaskId: dsId,
 						Key:            oev.Key,
 						Data:           oev.Data}
 				}
@@ -251,11 +288,11 @@ func (tm *taskManager) schedule(ctx context.Context) {
 			}
 			tm.chMux.Unlock()
 
-			// todo use goroutine pool
+			// TODO use goroutine pool
 			// run goroutine
 			go tm.Invoke(context.Background(), curTask, ch)
 
-			// todo notify optask status
+			// TODO notify optask status
 		}
 	}()
 }

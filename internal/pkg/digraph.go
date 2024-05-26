@@ -7,10 +7,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// todo directed graph util
+// TODO directed graph util
 
 func HasCycle(g *pb.Digraph) bool {
-	
+
 	return false
 }
 
@@ -42,4 +42,3 @@ func ToOpTasks[T any](source []string, fn func(string) T) []T {
 	}
 	return res
 }
-

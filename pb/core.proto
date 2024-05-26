@@ -9,7 +9,7 @@ service core {
   rpc EventChannel(stream Event) returns (stream Event) {}
   // Deprecated: dont use
   rpc DirectedEventChannel(stream EventChannelReq) returns (EventChannelResp) {}
-  // todo raft
+  // TODO raft
   // Send heart beat to coordinator or Ask if the coordinator is alive
   rpc SendHeartBeat(HeartBeatReq) returns (HeartBeatResp) {}
   // Submit tasks to the coordinator

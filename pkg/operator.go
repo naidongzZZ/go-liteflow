@@ -5,13 +5,10 @@ import (
 )
 
 type MapOp interface {
-
 	Map([]*pb.Event) []*pb.Event
-
 }
 
 type ReduceOp interface {
-	// todo 
+	// TODO
 	Reduce(map[string]int, []*pb.Event) []*pb.Event
-
 }

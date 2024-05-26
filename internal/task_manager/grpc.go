@@ -35,7 +35,7 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 				return
 			}
 			slog.Debug("Recv client message %v", event)
-			// todo distribute event
+			// TODO distribute event
 			// recv notify info
 			selfTaskId := event.TargetOpTaskId
 			targetTaskId := event.SourceOpTaskId
@@ -180,7 +180,7 @@ func (tm *taskManager) DirectedEventChannel(srv pb.Core_DirectedEventChannelServ
 		for _, ev := range eventChannelReq.Events {
 			ch, ok := tm.taskChannels[ev.TargetOpTaskId]
 			if !ok || ch == nil {
-				// todo ack ?
+				// TODO ack ?
 				continue
 			}
 

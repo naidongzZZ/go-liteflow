@@ -20,12 +20,12 @@ type coordinator struct {
 	srv  *grpc.Server
 	gSrv *grpcServer
 
-	mux          sync.Mutex
+	mux sync.Mutex
 	// key: coordinator_id or task_manager_id
 	serviceInfos map[string]*pb.ServiceInfo
 
 	// key: client_id, val: pb.disgraph
-	digraphMux sync.Mutex
+	digraphMux  sync.Mutex
 	taskDigraph map[string]*pb.Digraph
 }
 
@@ -43,7 +43,7 @@ func NewCoordinator(addr string) *coordinator {
 			ServiceType: pb.ServiceType_Coordinator,
 		},
 		serviceInfos: make(map[string]*pb.ServiceInfo),
-		taskDigraph: make(map[string]*pb.Digraph),
+		taskDigraph:  make(map[string]*pb.Digraph),
 	}
 
 	srv := grpc.NewServer()
@@ -130,7 +130,7 @@ func (co *coordinator) SubmitOpTask(digraph *pb.Digraph) (err error) {
 			curLevel[i].Downstream = make([]*pb.OperatorTask, 0)
 		}
 		tmpLevelTask = append(tmpLevelTask, curLevel)
-		
+
 		if len(cur.Downstream) == 0 {
 			cur = nil
 		} else {
@@ -138,7 +138,7 @@ func (co *coordinator) SubmitOpTask(digraph *pb.Digraph) (err error) {
 		}
 	}
 
-	for i:=0; i < len(tmpLevelTask); i++ {
+	for i := 0; i < len(tmpLevelTask); i++ {
 
 		// TODO more patterns
 		curLevelTaskIds := make([]string, 0, len(tmpLevelTask[i]))
@@ -153,7 +153,7 @@ func (co *coordinator) SubmitOpTask(digraph *pb.Digraph) (err error) {
 		nextLevelTask := make(map[string]*pb.OperatorTask)
 
 		if i+1 < len(tmpLevelTask) && len(tmpLevelTask[i+1]) > 0 {
-			for j:= range tmpLevelTask[i+1] {
+			for j := range tmpLevelTask[i+1] {
 				t := tmpLevelTask[i+1][j]
 				nextLevelTaskIds = append(nextLevelTaskIds, t.Id)
 				nextLevelTask[t.Id] = t
@@ -161,10 +161,10 @@ func (co *coordinator) SubmitOpTask(digraph *pb.Digraph) (err error) {
 		}
 
 		for _, nextLvTid := range nextLevelTaskIds {
-			
+
 			if nextLvTask, ok := nextLevelTask[nextLvTid]; ok {
-				upstreamTasks := pkg.ToOpTasks(curLevelTaskIds, 
-					func(s string) *pb.OperatorTask { return &pb.OperatorTask{Id: s}})
+				upstreamTasks := pkg.ToOpTasks(curLevelTaskIds,
+					func(s string) *pb.OperatorTask { return &pb.OperatorTask{Id: s} })
 				nextLvTask.Upstream = append(nextLvTask.Upstream, upstreamTasks...)
 			}
 
@@ -181,7 +181,7 @@ func (co *coordinator) SubmitOpTask(digraph *pb.Digraph) (err error) {
 	if err = uuid.Validate(clientId); err != nil {
 		return err
 	}
-	
+
 	co.digraphMux.Lock()
 	defer co.digraphMux.Unlock()
 	co.taskDigraph[clientId] = di
