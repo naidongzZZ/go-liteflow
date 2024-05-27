@@ -69,10 +69,11 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		coordinatorInfo: &pb.ServiceInfo{
 			ServiceAddr: coordAddr,
 		},
-		serviceInfos: make(map[string]*pb.ServiceInfo),
-		clientConns:  make(map[string]pb.CoreClient),
-		taskDigraph:  make(map[string]*pb.Digraph),
-		tasks:        make(map[string]*pb.OperatorTask),
+		serviceInfos:           make(map[string]*pb.ServiceInfo),
+		clientConns:            make(map[string]pb.CoreClient),
+		taskDigraph:            make(map[string]*pb.Digraph),
+		tasks:                  make(map[string]*pb.OperatorTask),
+		TaskManangerEventChans: make(map[string]*Channel),
 	}
 	tm.srv = grpc.NewServer()
 	pb.RegisterCoreServer(tm.srv, tm)
