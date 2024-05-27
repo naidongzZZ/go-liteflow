@@ -1,0 +1,38 @@
+services:
+  coordinator:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    command: ["./liteflow", "--run_mode=coordinator","--addr=:20021"]
+    container_name: co
+    ports:
+      - "20021:20021"
+    networks:
+      - go-liteflow
+
+  task_manager_1:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    command: ["./liteflow", "--run_mode=task_manager", "--addr=t1:20021", "--coord_addr=co:20021"]
+    container_name: t1
+    depends_on:
+      - coordinator
+    networks:
+      - go-liteflow
+
+  task_manager_2:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    command: ["./liteflow", "--run_mode=task_manager", "--addr=t2:20021", "--coord_addr=co:20021"]
+    container_name: t2
+    depends_on:
+      - coordinator
+    networks:
+      - go-liteflow
+
+networks:
+  go-liteflow:
+    name: go-liteflow
+    driver: bridge

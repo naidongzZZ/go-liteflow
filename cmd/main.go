@@ -22,14 +22,14 @@ func main() {
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name: "run_mode",
+			Name:  "run_mode",
 			Usage: "Start task_manager or coordinator",
 			Value: "task_manager",
 		},
 		cli.StringFlag{
 			Name:  "addr",
 			Usage: "App's Address",
-			Value: ":20020",
+			Value: ":20021",
 		},
 		cli.StringFlag{
 			Name:  "coord_addr",
@@ -45,9 +45,10 @@ func main() {
 			slog.Error("addr is illegal", slog.String("addr", addr))
 			return nil
 		}
-		
-		slog.Info("app start.", 
-	slog.String("run_mode", runMode), slog.String("addr", addr))
+
+		slog.Info("app start.",
+			slog.String("run_mode", runMode), 
+			slog.String("addr", addr))
 
 		if runMode == "task_manager" {
 			coordAddr := ctx.String("coord_addr")
@@ -63,9 +64,10 @@ func main() {
 		} else if runMode == "coordinator" {
 			co := coordinator.NewCoordinator(addr)
 			slog.Info("coordinator info.", slog.String("ID", co.ID()))
-
 			co.Start(context.Background())
+			slog.Info("coordinator info, coordinator exist")
 		}
+
 		return nil
 	}
 

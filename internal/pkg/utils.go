@@ -11,12 +11,12 @@ func ValidateIPv4WithPort(address string) bool {
         return false
     }
 
-    ip := net.ParseIP(host)
-    if ip.To4() == nil {
+    ips, err := net.LookupIP(host)
+    if err != nil || len(ips) == 0 {
         return false
     }
 
-	portNum, err := strconv.Atoi(port)
+    portNum, err := strconv.Atoi(port)
     if err != nil {
         return false
     }
