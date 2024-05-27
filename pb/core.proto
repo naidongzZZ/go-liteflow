@@ -74,6 +74,7 @@ enum EventType {
   DataOutPut = 1;
   Notify = 2;
   ACK = 3;
+  DataSent = 4;
 }
 
 message Event {

@@ -6,9 +6,12 @@ import (
 	"go-liteflow/internal/task_manager"
 	pb "go-liteflow/pb"
 	"plugin"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestInvode(t *testing.T) {
@@ -34,59 +37,86 @@ func TestInvode(t *testing.T) {
 	operator.RegisterOpFn("", pb.OpType_Reduce, ReduceOpFn)
 
 	tm := task_manager.NewTaskManager("", "")
-	in := make(chan *pb.Event, 1000)
-	tmp := make(chan *pb.Event, 1000)
-	out := make(chan *pb.Event, 1000)
+	output := task_manager.NewChannel("output")
 
-	opTaskMap := &pb.OperatorTask{
-		Id: 		"opTaskIdMap1",
-		OpType: 	pb.OpType_Map,
-		Downstream: []*pb.OperatorTask{{Id: "output"}},
-	}
-	opTaskMap2 := &pb.OperatorTask{
-		Id: 		"opTaskIdMap2",
-		OpType: 	pb.OpType_Map,
-		Downstream: []*pb.OperatorTask{{Id: "output"}},
-	}
 	opTaskReduce := &pb.OperatorTask{
 		Id: 		"opTaskReduce",
 		OpType: 	pb.OpType_Reduce,
 		Downstream: []*pb.OperatorTask{{Id: "output"}},
 	}
+	opTaskReduceInput := task_manager.NewChannel(opTaskReduce.Id)
+	
+	opTaskMap := &pb.OperatorTask{
+		Id: 		"opTaskIdMap1",
+		OpType: 	pb.OpType_Map,
+		Downstream: []*pb.OperatorTask{{Id: opTaskReduce.Id}},
+	}
+	opTaskMapInput := task_manager.NewChannel(opTaskMap.Id)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1 * time.Second)
-	defer cancel()
+	opTaskMap2 := &pb.OperatorTask{
+		Id: 		"opTaskIdMap2",
+		OpType: 	pb.OpType_Map,
+		Downstream: []*pb.OperatorTask{{Id: opTaskReduce.Id}},
+	}
+	opTaskMap2Input := task_manager.NewChannel(opTaskMap2.Id)
+	tm.RegisterChannel(output, opTaskMapInput, opTaskMap2Input, opTaskReduceInput)
+
+
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func ()  {
 		defer wg.Done()
-		tm.Invoke(ctx, opTaskMap, in, tmp)
+		tm.Invoke(ctx, opTaskMap, opTaskMapInput)
 	}()
 	wg.Add(1)
 	go func ()  {
 		defer wg.Done()
-		tm.Invoke(ctx, opTaskMap2, in, tmp)
+		tm.Invoke(ctx, opTaskMap2, opTaskMap2Input)
 	}()
 	wg.Add(1)
 	go func ()  {
 		defer wg.Done()
-		tm.Invoke(ctx, opTaskReduce, tmp, out)
+		tm.Invoke(ctx, opTaskReduce, opTaskReduceInput)
 	}()
 
-	in <- &pb.Event{
+	opTaskMapInput.InputCh() <- &pb.Event{
 		EventType: pb.EventType_DataOutPut,
 		Data: 	  []byte("sss kkk jjj lll www"),
 	}
-	in <- &pb.Event{
+	opTaskMap2Input.InputCh() <- &pb.Event{
 		EventType: pb.EventType_DataOutPut,
 		Data: []byte("sss kkk jjj"),
 	}
 
-	wg.Wait()
 
-	
-	//assert.Equal(t, 2, len(out))
+	time.Sleep(1 * time.Second)
+	opTaskReduceInput.InputCh() <- &pb.Event{
+		EventType: pb.EventType_DataSent,
+	}
+
+	res := map[string]int {
+		"sss": 2,
+		"kkk": 2,
+		"jjj": 2,
+		"lll": 1,
+		"www": 1,
+	}
+	for ev := range output.InputCh() {
+		key := string(ev.Key)
+		if v, ok := res[key]; ok {
+			r , _ := strconv.Atoi(string(ev.Data))
+			assert.Equal(t, v, r)
+		}
+		delete(res, key)
+		t.Logf("output: %v \n", ev)
+		if len(res) == 0 {
+			break
+		}
+	}
+	cancel()
+	wg.Wait()
 }
 
 

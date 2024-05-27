@@ -74,6 +74,7 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		taskDigraph:            make(map[string]*pb.Digraph),
 		tasks:                  make(map[string]*pb.OperatorTask),
 		TaskManangerEventChans: make(map[string]*Channel),
+		taskChannels:           make(map[string]*Channel),
 	}
 	tm.srv = grpc.NewServer()
 	pb.RegisterCoreServer(tm.srv, tm)
@@ -229,7 +230,6 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *
 
 			if len(opTask.Downstream) != 0 {
 				slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("events", output))
-
 				// TODO distribute target opTaskId
 
 				for _, oev := range output {
@@ -296,4 +296,24 @@ func (tm *taskManager) schedule(ctx context.Context) {
 			// TODO notify optask status
 		}
 	}()
+}
+
+func (tm *taskManager) RegisterChannel(channels ...*Channel) {
+	if len(channels) == 0 {
+		return
+	}
+	for _, ch := range channels {
+		if ch.opTaskId != "" {
+			tm.chMux.Lock()
+			tm.taskChannels[ch.opTaskId] = ch
+			tm.chMux.Unlock()
+			continue
+		}
+		if ch.taskManagerId != "" {
+			tm.mux.Lock()
+			tm.TaskManangerEventChans[ch.taskManagerId] = ch
+			tm.mux.Unlock()
+			continue
+		}
+	}
 }

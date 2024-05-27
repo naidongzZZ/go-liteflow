@@ -35,6 +35,13 @@ type Sum struct{}
 func (s *Sum) Reduce(collector map[string]int, input []*pb.Event) (output []*pb.Event) {
 
 	for _, ev := range input {
+		if ev.EventType == pb.EventType_DataSent {
+			for k, v := range collector {
+				output = append(output, &pb.Event{Key: k, Data: []byte(strconv.Itoa(v))})
+			}
+			return
+		}
+
 		num, err := strconv.Atoi(string(ev.Data))
 		if err != nil {
 			fmt.Println(err)
@@ -43,9 +50,6 @@ func (s *Sum) Reduce(collector map[string]int, input []*pb.Event) (output []*pb.
 		collector[ev.Key] += num
 	}
 
-	for k, v := range collector {
-		output = append(output, &pb.Event{Key: k, Data: []byte(strconv.Itoa(v))})
-	}
 	return output
 }
 
