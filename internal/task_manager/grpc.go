@@ -142,7 +142,7 @@ func NewCoupleEventsReq() *pb.EventChannelReq {
 
 func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq) (resp *pb.DeployOpTaskResp, err error) {
 	resp = new(pb.DeployOpTaskResp)
-	
+
 	tm.digraphMux.Lock()
 	defer tm.digraphMux.Unlock()
 
@@ -152,8 +152,10 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 
 		if e := pkg.ValidateOpTask(opTask); e != nil {
 			slog.Warn("validate optask.", slog.Any("err", e))
-			return
+			return resp, status.Error(codes.InvalidArgument, "")
 		}
+
+		// TODO download plugin.so
 
 		slog.Debug("Deploy Optask:%s to TaskManager:%s", opTask.Id, tm.ID())
 		tm.tasks[opTask.Id] = req.Digraph.Adj[i]
@@ -163,7 +165,40 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 }
 
 func (tm *taskManager) ManageOpTask(ctx context.Context, req *pb.ManageOpTaskReq) (resp *pb.ManageOpTaskResp, err error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ManageOpTask not implemented")
+
+	resp = new(pb.ManageOpTaskResp)
+
+	switch req.ManageType {
+	case pb.ManageType_Start:
+		{
+			tm.digraphMux.Lock()
+			defer tm.digraphMux.Unlock()
+
+			for _, opTaskId := range req.OpTaskIds {
+				task, ok := tm.tasks[opTaskId]
+				// TODO task state transition
+				if ok && task.State == pb.TaskStatus_Ready {
+					tm.chMux.Lock()
+					ch, ok := tm.taskChannels[opTaskId]
+					if !ok {
+						ch = NewChannel(opTaskId)
+						tm.taskChannels[opTaskId] = ch
+					}
+					tm.chMux.Unlock()
+
+					// TODO WithTimeout context 
+					go tm.Invoke(context.TODO(), task, ch)
+
+					// TODO notify optask status to coordinator
+					task.State = pb.TaskStatus_Running
+				}
+			}
+		}
+	default:
+		return resp, status.Errorf(codes.Unimplemented, "manage type %v unsupported", req.ManageType)
+	}
+
+	return
 }
 
 func (tm *taskManager) DirectedEventChannel(srv pb.Core_DirectedEventChannelServer) (err error) {

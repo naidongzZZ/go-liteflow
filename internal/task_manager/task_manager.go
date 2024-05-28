@@ -263,42 +263,13 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *
 }
 
 func (tm *taskManager) schedule(ctx context.Context) {
-	go func() {
+	// TODO Currently, task scheduling is not supported. start task by ManageOpTask method
 
-		for {
-			time.Sleep(1 * time.Second)
-
-			var curTask *pb.OperatorTask
-
-			// schedule ready optask
-			tm.digraphMux.Lock()
-			for _, task := range tm.tasks {
-				if task.State == pb.TaskStatus_Ready {
-					curTask = task
-					break
-				}
-			}
-			tm.digraphMux.Unlock()
-
-			if curTask == nil {
-				continue
-			}
-			// new channel
-			tm.chMux.Lock()
-			ch, ok := tm.taskChannels[curTask.Id]
-			if !ok {
-				ch = NewChannel(curTask.Id)
-				tm.taskChannels[curTask.Id] = ch
-			}
-			tm.chMux.Unlock()
-
-			// TODO use goroutine pool
-			// run goroutine
-			go tm.Invoke(context.Background(), curTask, ch)
-
-			// TODO notify optask status
-		}
-	}()
+	// schedule ready optask
+	// new channel
+	// TODO use goroutine pool
+	// run goroutine
+	// TODO notify optask status
 }
 
 func (tm *taskManager) RegisterChannel(channels ...*Channel) {
