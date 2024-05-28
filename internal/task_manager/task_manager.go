@@ -36,7 +36,7 @@ type taskManager struct {
 
 	digraphMux sync.Mutex
 	// key: client_id, val: pb.disgraph
-	taskDigraph map[string]*pb.Digraph
+	// taskDigraph map[string]*pb.Digraph
 	// key: optask_id, val: pb.OperatorTask
 	tasks map[string]*pb.OperatorTask
 
@@ -71,7 +71,6 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		},
 		serviceInfos:           make(map[string]*pb.ServiceInfo),
 		clientConns:            make(map[string]pb.CoreClient),
-		taskDigraph:            make(map[string]*pb.Digraph),
 		tasks:                  make(map[string]*pb.OperatorTask),
 		TaskManangerEventChans: make(map[string]*Channel),
 		taskChannels:           make(map[string]*Channel),

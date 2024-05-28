@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"errors"
 	"fmt"
 	pb "go-liteflow/pb"
 
@@ -41,4 +42,22 @@ func ToOpTasks[T any](source []string, fn func(string) T) []T {
 		res[i] = fn(e)
 	}
 	return res
+}
+
+func ValidateOpTask(opTask *pb.OperatorTask) (err error) {
+	if opTask == nil {
+		return errors.New("optask is nil")
+	}
+	if opTask.Id == "" {
+		return errors.New("optask.id is empty string")
+	}
+	if opTask.OpType == pb.OpType_OpUnknown {
+		return errors.New("optask.optype is unknown")
+	}
+	for _, s := range append(opTask.Upstream, opTask.Downstream...) {
+		if s.TaskManagerId == "" || s.Id == "" {
+			return errors.New("optask.upstream or downstream is invalid")
+		}
+	}
+	return err
 }

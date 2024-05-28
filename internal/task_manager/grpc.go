@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"go-liteflow/internal/pkg"
 	pb "go-liteflow/pb"
 	"io"
 	"log"
@@ -141,22 +142,26 @@ func NewCoupleEventsReq() *pb.EventChannelReq {
 
 func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq) (resp *pb.DeployOpTaskResp, err error) {
 	resp = new(pb.DeployOpTaskResp)
+	
 	tm.digraphMux.Lock()
 	defer tm.digraphMux.Unlock()
 
-	tm.taskDigraph[req.ClientId] = req.Digraph
+	for i := range req.Digraph.Adj {
+		// validate opTask
+		opTask := req.Digraph.Adj[i]
 
-	for _, optaskId := range req.OpTaskIds {
-		for i := range req.Digraph.Adj {
-			if optaskId == req.Digraph.Adj[i].Id {
-				slog.Debug("Deploy Optask:%s to TaskManager:%s", optaskId, tm.ID())
-				tm.tasks[optaskId] = req.Digraph.Adj[i]
-			}
+		if e := pkg.ValidateOpTask(opTask); e != nil {
+			slog.Warn("validate optask.", slog.Any("err", e))
+			return
 		}
+
+		slog.Debug("Deploy Optask:%s to TaskManager:%s", opTask.Id, tm.ID())
+		tm.tasks[opTask.Id] = req.Digraph.Adj[i]
 	}
 
 	return resp, nil
 }
+
 func (tm *taskManager) ManageOpTask(ctx context.Context, req *pb.ManageOpTaskReq) (resp *pb.ManageOpTaskResp, err error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ManageOpTask not implemented")
 }

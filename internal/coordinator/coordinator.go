@@ -190,4 +190,6 @@ func (co *coordinator) SubmitOpTask(digraph *pb.Digraph) (err error) {
 }
 
 func (co *coordinator) schedule() {
+
+	// TODO downstream info, task_maanager_id
 }
