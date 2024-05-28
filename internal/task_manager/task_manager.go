@@ -105,6 +105,10 @@ func (tm *taskManager) Start(ctx context.Context) {
 	}
 }
 
+func (tm *taskManager) Stop(ctx context.Context) {
+	tm.srv.Stop()
+}
+
 func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 	conn, err := grpc.Dial(tm.coordinatorInfo.ServiceAddr, grpc.WithInsecure())
 	if err != nil {
