@@ -20,7 +20,8 @@ type taskManager struct {
 
 	taskManagerInfo *pb.ServiceInfo
 
-	coordinatorInfo *pb.ServiceInfo
+	coordinatorInfo   *pb.ServiceInfo
+	coordinatorClient pb.CoreClient
 
 	srv *grpc.Server
 
@@ -108,24 +109,31 @@ func (tm *taskManager) Stop(ctx context.Context) {
 	tm.srv.Stop()
 }
 
-func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
-	conn, err := grpc.Dial(tm.coordinatorInfo.ServiceAddr, grpc.WithInsecure())
-	if err != nil {
-		slog.Error("dial coordinator", slog.Any("err", err))
-		return err
+func (tm *taskManager) Coordinator() pb.CoreClient {
+	if tm.coordinatorClient != nil {
+		return tm.coordinatorClient
 	}
 
-	coordinatorConn := pb.NewCoreClient(conn)
-	tm.mux.Lock()
-	tm.clientConns[tm.taskManagerInfo.ServiceAddr] = coordinatorConn
-	tm.mux.Unlock()
+	co := tm.coordinatorInfo
+	if co == nil || len(co.ServiceAddr) == 0 {
+		panic("coordinator info is nil")
+	}
 
+	conn, err := grpc.Dial(co.ServiceAddr, grpc.WithInsecure())
+	if err != nil {
+		panic("connect coordinator fail: " + err.Error())
+	}
+	tm.coordinatorClient = pb.NewCoreClient(conn)
+	return tm.coordinatorClient
+}
+
+func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
 
 			req := &pb.HeartBeatReq{ServiceInfo: tm.taskManagerInfo}
-			resp, err := coordinatorConn.SendHeartBeat(ctx, req)
+			resp, err := tm.Coordinator().SendHeartBeat(ctx, req)
 			if err != nil {
 				slog.Error("send heart beat to coordinator.", slog.Any("err", err))
 				continue
@@ -202,61 +210,59 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *
 
 	// TODO 下游的通道未建立完成, 需要等待重试
 
-	downstreamCh := make(map[string]*Channel)
-	tm.chMux.Lock()
-	for _, ds := range opTask.Downstream {
-		tmp, ok := tm.taskChannels[ds.Id]
-		if !ok {
-			tm.mux.Lock()
-			// TODO not found task manager
-			tmp, ok = tm.TaskManangerEventChans[ds.TaskManagerId]
-			if !ok {
-				slog.Info("not found channel.", slog.String("downstream", ds.Id))
-				tm.mux.Unlock()
-				tm.chMux.Unlock()
-				return
+	dsch := make(map[string]*Channel)
+	var times, maxTryTimes = 0, 30
+	for len(opTask.Downstream) != len(dsch) {
+		for _, ds := range opTask.Downstream {
+			ch := tm.GetChannel(opTask.ClientId, ds.Id)
+			if ch != nil {
+				dsch[ds.Id] = ch
 			}
-			tm.mux.Unlock()
 		}
-		downstreamCh[ds.Id] = tmp
+		if len(opTask.Downstream) == len(dsch) {
+			break
+		}
+		if times > maxTryTimes {
+			slog.Error("downstream channel not ready", slog.Any("dsch", dsch))
+			return errors.New("channel not ready")
+		}
+		time.Sleep(3 * time.Second)
 	}
-	tm.chMux.Unlock()
 
 	for {
 		select {
 		case ev := <-ch.InputCh():
 			if ev.EventType == pb.EventType_EtUnknown {
-				return
+				continue
 			}
 
 			slog.Info("operator input.", slog.Any("opTaskId", opTask.Id), slog.Any("event", ev))
-
+			// invoke opFn
 			output := opFn(ctx, ev)
 
-			if len(opTask.Downstream) != 0 {
-				slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("events", output))
-				// TODO distribute target opTaskId
-
-				for _, oev := range output {
-					// TODO which opTaskId ?
-					dsId := opTask.Downstream[0].Id
-					downstream, ok := downstreamCh[dsId]
-					if !ok {
-						slog.Error("not found downstream.", slog.String("optaskId", dsId))
-						return
-					}
-
-					downstream.InputCh() <- &pb.Event{
-						Id:             uuid.NewString(),
-						EventType:      pb.EventType_DataOutPut,
-						EventTime:      ev.EventTime,
-						SourceOpTaskId: opTask.Id,
-						TargetOpTaskId: dsId,
-						Key:            oev.Key,
-						Data:           oev.Data}
-				}
+			if len(opTask.Downstream) == 0 {
+				continue
 			}
+			slog.Info("operator output.", slog.Any("opTaskId", opTask.Id), slog.Any("events", output))
 
+			for _, oev := range output {
+				// TODO distribute target opTaskId
+				dsId := opTask.Downstream[0].Id
+				ds, ok := dsch[dsId]
+				if !ok {
+					slog.Error("not found ds channel.", slog.String("optaskId", dsId))
+					continue
+				}
+
+				ds.InputCh() <- &pb.Event{
+					Id:             uuid.NewString(),
+					EventType:      pb.EventType_DataOutPut,
+					EventTime:      ev.EventTime,
+					SourceOpTaskId: opTask.Id,
+					TargetOpTaskId: dsId,
+					Key:            oev.Key,
+					Data:           oev.Data}
+			}
 		case <-ctx.Done():
 			slog.Info("operator done.", slog.Any("opTaskId", opTask.Id), slog.Any("err", ctx.Err()))
 			return
@@ -292,4 +298,27 @@ func (tm *taskManager) RegisterChannel(channels ...*Channel) {
 			continue
 		}
 	}
+}
+
+func (tm *taskManager) GetChannel(clientId, optaskId string) (ch *Channel) {
+	tm.chMux.Lock()
+	ch = tm.taskChannels[optaskId]
+	tm.chMux.Unlock()
+	if ch != nil {
+		return
+	}
+
+	req := &pb.FindOpTaskReq{ClientId: clientId, OpTaskId: optaskId}
+	resp, err := tm.Coordinator().FindOpTask(context.TODO(), req) 
+	if err != nil {
+		slog.Error("find opTask.", slog.Any("err", err))
+		return nil
+	}
+	if resp == nil || resp.TaskManagerId == "" {
+		return nil
+	}
+	tm.mux.Lock()
+	defer tm.mux.Unlock()
+	ch = tm.TaskManangerEventChans[resp.TaskManagerId]
+	return 
 }

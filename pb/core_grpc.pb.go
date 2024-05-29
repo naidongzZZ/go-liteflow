@@ -39,6 +39,8 @@ type CoreClient interface {
 	ReportOpTask(ctx context.Context, in *ReportOpTaskReq, opts ...grpc.CallOption) (*ReportOpTaskResp, error)
 	// Download executable file
 	DownloadOpTaskEF(ctx context.Context, in *DownloadReq, opts ...grpc.CallOption) (Core_DownloadOpTaskEFClient, error)
+	// Find task info
+	FindOpTask(ctx context.Context, in *FindOpTaskReq, opts ...grpc.CallOption) (*FindOpTaskResp, error)
 }
 
 type coreClient struct {
@@ -191,6 +193,15 @@ func (x *coreDownloadOpTaskEFClient) Recv() (*DownloadResp, error) {
 	return m, nil
 }
 
+func (c *coreClient) FindOpTask(ctx context.Context, in *FindOpTaskReq, opts ...grpc.CallOption) (*FindOpTaskResp, error) {
+	out := new(FindOpTaskResp)
+	err := c.cc.Invoke(ctx, "/pb.core/FindOpTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServer is the server API for Core service.
 // All implementations must embed UnimplementedCoreServer
 // for forward compatibility
@@ -212,6 +223,8 @@ type CoreServer interface {
 	ReportOpTask(context.Context, *ReportOpTaskReq) (*ReportOpTaskResp, error)
 	// Download executable file
 	DownloadOpTaskEF(*DownloadReq, Core_DownloadOpTaskEFServer) error
+	// Find task info
+	FindOpTask(context.Context, *FindOpTaskReq) (*FindOpTaskResp, error)
 	mustEmbedUnimplementedCoreServer()
 }
 
@@ -242,6 +255,9 @@ func (UnimplementedCoreServer) ReportOpTask(context.Context, *ReportOpTaskReq) (
 }
 func (UnimplementedCoreServer) DownloadOpTaskEF(*DownloadReq, Core_DownloadOpTaskEFServer) error {
 	return status.Errorf(codes.Unimplemented, "method DownloadOpTaskEF not implemented")
+}
+func (UnimplementedCoreServer) FindOpTask(context.Context, *FindOpTaskReq) (*FindOpTaskResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FindOpTask not implemented")
 }
 func (UnimplementedCoreServer) mustEmbedUnimplementedCoreServer() {}
 
@@ -419,6 +435,24 @@ func (x *coreDownloadOpTaskEFServer) Send(m *DownloadResp) error {
 	return x.ServerStream.SendMsg(m)
 }
 
+func _Core_FindOpTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FindOpTaskReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServer).FindOpTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.core/FindOpTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServer).FindOpTask(ctx, req.(*FindOpTaskReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Core_ServiceDesc is the grpc.ServiceDesc for Core service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -445,6 +479,10 @@ var Core_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportOpTask",
 			Handler:    _Core_ReportOpTask_Handler,
+		},
+		{
+			MethodName: "FindOpTask",
+			Handler:    _Core_FindOpTask_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

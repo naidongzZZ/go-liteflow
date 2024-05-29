@@ -22,6 +22,8 @@ service core {
   rpc ReportOpTask(ReportOpTaskReq) returns (ReportOpTaskResp) {}
   // Download executable file
   rpc DownloadOpTaskEF(DownloadReq) returns (stream DownloadResp) {}
+  // Find task info
+  rpc FindOpTask(FindOpTaskReq) returns (FindOpTaskResp) {}
 }
 
 // directed graph
@@ -171,3 +173,12 @@ message ReportOpTaskResp {
 message DownloadReq { string client_id = 1; }
 
 message DownloadResp { bytes file_bytes = 1; }
+
+message FindOpTaskReq {
+  string client_id = 1;
+  string op_task_id = 2;
+}
+
+message FindOpTaskResp {
+  string task_manager_id = 1;
+}
