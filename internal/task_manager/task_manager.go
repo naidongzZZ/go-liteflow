@@ -208,8 +208,7 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *
 		return errors.New("unsupported Operator Func")
 	}
 
-	// TODO 下游的通道未建立完成, 需要等待重试
-
+	// wait for channel ready
 	dsch := make(map[string]*Channel)
 	var times, maxTryTimes = 0, 30
 	for len(opTask.Downstream) != len(dsch) {
