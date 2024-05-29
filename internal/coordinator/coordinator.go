@@ -168,7 +168,7 @@ func (co *coordinator) schedule(ctx context.Context) {
 							slog.Error("deploy task.", slog.Any("err", err))
 							continue
 						}
-						task.State = pb.TaskStatus_Running
+						task.State = pb.TaskStatus_Deployed
 						task.TaskManagerId = tmId
 					}
 				}

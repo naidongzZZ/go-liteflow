@@ -161,9 +161,12 @@ message ManageOpTaskResp {}
 message ReportOpTaskReq {
   string op_task_id = 1;
   TaskStatus op_task_status = 2;
+  string client_id = 3;
 }
 
-message ReportOpTaskResp {}
+message ReportOpTaskResp {
+  string task_manager_id = 1;
+}
 
 message DownloadReq { string client_id = 1; }
 
