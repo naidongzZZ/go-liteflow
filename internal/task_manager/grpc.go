@@ -146,6 +146,7 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 	tm.digraphMux.Lock()
 	defer tm.digraphMux.Unlock()
 
+	opTaskIds := make([]string, 0)
 	for i := range req.Digraph.Adj {
 		// validate opTask
 		opTask := req.Digraph.Adj[i]
@@ -159,6 +160,14 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 
 		slog.Debug("Deploy Optask:%s to TaskManager:%s", opTask.Id, tm.ID())
 		tm.tasks[opTask.Id] = req.Digraph.Adj[i]
+		opTaskIds = append(opTaskIds, opTask.Id)
+	}
+
+	// TODO deploy and then start task
+	_, err = tm.ManageOpTask(ctx, &pb.ManageOpTaskReq{ManageType: pb.ManageType_Start, OpTaskIds: opTaskIds})
+	if err != nil {
+		slog.Error("start optask.", slog.Any("opTaskIds", opTaskIds), slog.Any("err", err))
+		return resp, err
 	}
 
 	return resp, nil

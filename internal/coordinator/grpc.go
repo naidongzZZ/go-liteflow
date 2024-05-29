@@ -23,7 +23,7 @@ func (co *coordinator) SendHeartBeat(ctx context.Context, req *pb.HeartBeatReq) 
 	err = co.RegistServiceInfo(req.ServiceInfo)
 	if err != nil {
 		slog.Error("register service info.", slog.Any("err", err))
-		return
+		return resp, status.Errorf(codes.InvalidArgument, "")
 	}
 	resp.ServiceInfos = co.GetServiceInfo()
 	return resp, nil

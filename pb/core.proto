@@ -44,7 +44,9 @@ enum OpType {
 enum TaskStatus {
   TsUnknown = 0;
   Ready = 1;
-  Running = 2;
+  Deployed = 2;
+  Running = 3;
+  Done = 4;
 }
 
 message OperatorTask {
@@ -115,6 +117,7 @@ message ServiceInfo {
   ServiceType service_type = 2;
   ServiceStatus service_status = 3;
   string service_addr = 4;
+  int64 timestamp = 5;
 }
 
 message HeartBeatReq { ServiceInfo service_info = 1; }

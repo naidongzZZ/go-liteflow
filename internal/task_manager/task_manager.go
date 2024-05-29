@@ -200,6 +200,8 @@ func (tm *taskManager) Invoke(ctx context.Context, opTask *pb.OperatorTask, ch *
 		return errors.New("unsupported Operator Func")
 	}
 
+	// TODO 下游的通道未建立完成, 需要等待重试
+
 	downstreamCh := make(map[string]*Channel)
 	tm.chMux.Lock()
 	for _, ds := range opTask.Downstream {
