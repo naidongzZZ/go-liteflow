@@ -70,25 +70,46 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		coordinatorInfo: &pb.ServiceInfo{
 			ServiceAddr: coordAddr,
 		},
-		serviceInfos:           make(map[string]*pb.ServiceInfo),
-		clientConns:            make(map[string]pb.CoreClient),
-		tasks:                  make(map[string]*pb.OperatorTask),
-		TaskManangerEventChans: make(map[string]*Channel),
-		taskChannels:           make(map[string]*Channel),
+		serviceInfos:             make(map[string]*pb.ServiceInfo),
+		clientConns:              make(map[string]pb.CoreClient),
+		tasks:                    make(map[string]*pb.OperatorTask),
+		TaskManangerEventChans:   make(map[string]*Channel),
+		taskChannels:             make(map[string]*Channel),
+		TaskManagerBufferMonitor: *NewTaskManagerBufferMonitor(),
 	}
 	tm.srv = grpc.NewServer()
 	pb.RegisterCoreServer(tm.srv, tm)
-
 	return tm
+}
+
+func (tm *taskManager) RegisterTaskClient(addr string, taskId string) error {
+	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	if err != nil {
+		return err
+	}
+	coreClient := pb.NewCoreClient(conn)
+	tm.clientConns[taskId] = coreClient
+	for {
+		client, cerr := coreClient.EventChannel(context.Background())
+		if cerr != nil {
+			// return cerr
+			time.Sleep(1 * time.Second)
+		} else {
+			tm.eventChanClient[taskId] = &client
+			break
+		}
+
+	}
+	return nil
 }
 
 func (tm *taskManager) Start(ctx context.Context) {
 
-	err := tm.heartBeat(ctx)
-	if err != nil {
-		slog.Error("task_manager heart beat.", slog.Any("err", err))
-		return
-	}
+	// err := tm.heartBeat(ctx)
+	// if err != nil {
+	// 	slog.Error("task_manager heart beat.", slog.Any("err", err))
+	// 	return
+	// }
 
 	tm.schedule(ctx)
 
@@ -186,17 +207,21 @@ func (tm *taskManager) ID() string {
 	return tm.taskManagerInfo.Id
 }
 
+func (tm *taskManager) GetBuffer(opId string) *Buffer {
+	return tm.bufferPool[opId]
+}
+
 func (tm *taskManager) GetOperatorNodeClient(opId string) pb.Core_EventChannelClient {
 	var client pb.Core_EventChannelClient
 	var err error
-	client = tm.eventChanClient[opId]
+	client = *tm.eventChanClient[opId]
 	if client == nil && tm.clientConns[opId] != nil {
 		client, err = tm.clientConns[opId].EventChannel(context.Background())
 		if err != nil {
 			slog.Error("Failed to create event client : %v", err)
 			return nil
 		}
-		tm.eventChanClient[opId] = client
+		tm.eventChanClient[opId] = &client
 	}
 	return client
 }
@@ -308,7 +333,7 @@ func (tm *taskManager) GetChannel(clientId, optaskId string) (ch *Channel) {
 	}
 
 	req := &pb.FindOpTaskReq{ClientId: clientId, OpTaskId: optaskId}
-	resp, err := tm.Coordinator().FindOpTask(context.TODO(), req) 
+	resp, err := tm.Coordinator().FindOpTask(context.TODO(), req)
 	if err != nil {
 		slog.Error("find opTask.", slog.Any("err", err))
 		return nil
@@ -319,5 +344,5 @@ func (tm *taskManager) GetChannel(clientId, optaskId string) (ch *Channel) {
 	tm.mux.Lock()
 	defer tm.mux.Unlock()
 	ch = tm.TaskManangerEventChans[resp.TaskManagerId]
-	return 
+	return
 }

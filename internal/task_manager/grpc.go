@@ -1,14 +1,10 @@
 package task_manager
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
-	"errors"
 	"go-liteflow/internal/pkg"
 	pb "go-liteflow/pb"
 	"io"
-	"log"
 	"log/slog"
 	"sync"
 	"time"
@@ -21,10 +17,11 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	// server push task output data
+	// server receive upstream data
 	go func() {
 		defer wg.Done()
 		for {
+			// recv data push req
 			event, err := stream.Recv()
 			if err == io.EOF {
 				slog.Info("Read all client's msg done \n")
@@ -32,10 +29,10 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 				break
 			}
 			if err != nil {
-				slog.Error("Failed to receive a event : %v", err)
+				slog.Error("Failed to receive a event: ", slog.Any("err", err))
 				return
 			}
-			slog.Debug("Recv client message %v", event)
+			slog.Info("Recv client message:", slog.Any("event", event))
 			// TODO distribute event
 			// recv notify info
 			selfTaskId := event.TargetOpTaskId
@@ -46,73 +43,19 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 				// stream.Send()
 				stream.Send(NewAckEventReq("false", selfTaskId, targetTaskId))
 			} else {
-				// output data
-				var credit int
-				bytesBuffer := bytes.NewBuffer(event.Data)
-				err = binary.Read(bytesBuffer, binary.BigEndian, &credit)
-				if err != nil {
-					slog.Error("binary.Read failed: %v", err)
-				}
-				outputDataFunc := func(data [][]byte) error {
-					sendData := encodeByteData(data)
-					// push data
-					stream.Send(NewSingleEventReq(sendData, selfTaskId, targetTaskId))
-					// ack data push result
-					ack, ackErr := stream.Recv()
-					if ackErr != nil || ack.EventType != pb.EventType_ACK || string(ack.Data) == "false" {
-						return errors.New("data out put error")
-					}
-					return nil
-				}
-				err = bf.RemoveData(OutputData, credit, outputDataFunc)
-				if err != nil {
-					slog.Error("data out put error,targetTaskId:%v, selfTaskId:%v", targetTaskId, selfTaskId)
+				// input data
+				res := bf.AddData(InputData, []*pb.Event{event})
+				if res {
+					//input success
+					stream.Send(NewAckEventReq("true", selfTaskId, targetTaskId))
+				} else {
+					// input error
+					stream.Send(NewAckEventReq("false", selfTaskId, targetTaskId))
 				}
 			}
+			slog.Info("current buffer size:", slog.Any("usage", bf.Usage))
 		}
 	}()
-	wg.Add(1)
-	notifyc := tm.notifyChan
-	// client , s r s
-	go func(notifyc chan NotifyEvent) {
-		defer wg.Done()
-		for notify := range notifyc {
-			opId := notify.opId
-			currentTaskId := notify.sourceTaskId
-			targetTaskId := notify.targetTaskId
-			credit := notify.credit
-			stream := tm.GetOperatorNodeClient(opId)
-			if stream != nil {
-				bytesBuffer := bytes.NewBuffer([]byte{})
-				binary.Write(bytesBuffer, binary.BigEndian, uint16(credit))
-				// notify upstream
-				err := stream.Send(NewSingleEventReq(bytesBuffer.Bytes(), currentTaskId, targetTaskId))
-				if err != nil {
-					break
-				}
-				// recv input data flow
-				event, err := stream.Recv()
-				if err == nil && event.EventType != pb.EventType_ACK {
-					// data input
-					bf := tm.bufferPool[currentTaskId]
-					if bf != nil {
-						dataFlow := decodeByteData(event.Data)
-						res := bf.AddData(InputData, dataFlow)
-						if !res {
-							log.Fatalf("data in put error,targetTaskId:%v, selfTaskId:%v", targetTaskId, currentTaskId)
-							stream.Send(NewAckEventReq("false", currentTaskId, targetTaskId))
-						} else {
-							stream.Send(NewAckEventReq("true", currentTaskId, targetTaskId))
-						}
-					} else {
-						log.Fatalf("data in put error,no rel task buffer,targetTaskId:%v, selfTaskId:%v", targetTaskId, currentTaskId)
-						stream.Send(NewAckEventReq("false", currentTaskId, targetTaskId))
-					}
-				}
-			}
-		}
-	}(notifyc)
-
 	wg.Wait()
 	return nil
 }
@@ -195,7 +138,7 @@ func (tm *taskManager) ManageOpTask(ctx context.Context, req *pb.ManageOpTaskReq
 					}
 					tm.chMux.Unlock()
 
-					// TODO WithTimeout context 
+					// TODO WithTimeout context
 					go tm.Invoke(context.TODO(), task, ch)
 
 					// TODO notify optask status to coordinator
