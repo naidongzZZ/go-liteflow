@@ -82,34 +82,52 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 	return tm
 }
 
-func (tm *taskManager) RegisterTaskClient(addr string, taskId string) error {
-	conn, err := grpc.Dial(addr, grpc.WithInsecure())
-	if err != nil {
-		return err
-	}
-	coreClient := pb.NewCoreClient(conn)
-	tm.clientConns[taskId] = coreClient
-	for {
-		client, cerr := coreClient.EventChannel(context.Background())
-		if cerr != nil {
-			// return cerr
-			time.Sleep(1 * time.Second)
-		} else {
-			tm.eventChanClient[taskId] = &client
-			break
+func (tm *taskManager) RegisterTaskStreamServerClient(task *pb.OperatorTask) error {
+	stream := make([]*pb.OperatorTask, 0)
+	stream = append(stream, task.Downstream...)
+
+	var wg sync.WaitGroup
+	existConn := make(map[string]bool)
+	for _, opTask := range stream {
+		if _, e := existConn[opTask.Id]; e {
+			//exist rel client
+			continue
 		}
+		existConn[opTask.Id] = true
+		wg.Add(1)
+		go func() {
+			addr := opTask.ClientId
+			conn, _ := grpc.Dial(addr, grpc.WithInsecure())
+			coreClient := pb.NewCoreClient(conn)
+			tm.clientConns[addr] = coreClient
+			for {
+				client, cerr := coreClient.EventChannel(context.Background())
+				if cerr != nil {
+					// return cerr
+					time.Sleep(1 * time.Second)
+				} else {
+					tm.eventChanClient[opTask.Id] = &client
+					wg.Done()
+					break
+				}
+			}
+		}()
 
 	}
+	wg.Wait()
+	// client init finish , start running task
+	task.State = pb.TaskStatus_Deployed
 	return nil
 }
 
+
 func (tm *taskManager) Start(ctx context.Context) {
 
-	// err := tm.heartBeat(ctx)
-	// if err != nil {
-	// 	slog.Error("task_manager heart beat.", slog.Any("err", err))
-	// 	return
-	// }
+	err := tm.heartBeat(ctx)
+	if err != nil {
+		slog.Error("task_manager heart beat.", slog.Any("err", err))
+		return
+	}
 
 	tm.schedule(ctx)
 

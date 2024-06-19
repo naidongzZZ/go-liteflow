@@ -52,8 +52,8 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 					// input error
 					stream.Send(NewAckEventReq("false", selfTaskId, targetTaskId))
 				}
-			}
 			slog.Info("current buffer size:", slog.Any("usage", bf.Usage))
+			}
 		}
 	}()
 	wg.Wait()

@@ -36,60 +36,62 @@ func (t *TaskManagerBufferMonitor) RegisterOperatorTask(task *pb.OperatorTask) e
 	t.taskPool[task.Id] = task
 	// init buffer
 	t.initialTaskBuffer(task.Id, 1024)
-	outputQueues := make(map[string]chan *pb.Event)
-	// init client
-	if task.Downstream != nil && len(task.Downstream) > 0 {
-		// init downstream client
-		tm := *GetTaskManager()
-		for _, opt := range task.Downstream {
-			c := tm.GetOperatorNodeClient(opt.Id)
-			t.eventChanClient[opt.Id] = &c
-		}
-	}
-	// init downstream output buffer
-	for _, opt := range task.Downstream {
-		outputQueues[opt.Id] = make(chan *pb.Event, t.bufferPool[task.Id].Size)
-	}
-	t.bufferPool[task.Id].OutQueue = outputQueues
-	// assign a thread to push data to rel downstreams
-	go func() {
-		cases := make([]reflect.SelectCase, 0, len(outputQueues))
-		keys := make([]string, 0, len(outputQueues))
-		for key, ch := range outputQueues {
-			cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)})
-			keys = append(keys, key)
-		}
-		for len(cases) > 0 {
-			idx, recv, ok := reflect.Select(cases)
-			if !ok {
-				// channal has closed, remove rel channel
-				cases = append(cases[:idx], cases[idx+1:]...)
-				keys = append(keys[:idx], keys[idx+1:]...)
-				continue
-			}
-			event := recv.Interface().(*pb.Event)
-			slog.Info(fmt.Sprintf("Received from output channel %s: %v\n", keys[idx], event))
-			//push data
-			client := *t.eventChanClient[keys[idx]]
+	// assign a thread to push data to rel downstreams when has downstream
+	if len(task.Downstream) > 0 {
+		go func() {
+			// waiting connect to rel downstream server
 			for {
-				er := client.Send(NewSingleEventReq(event.Data, task.Id, keys[idx]))
-				if er != nil {
-					slog.Error("data out push error")
-				} else {
-					resp, err := client.Recv()
-					if err != nil || resp.EventType != pb.EventType_ACK || string(resp.Data) == "false" {
-						slog.Error("data out push error")
-					} else if string(resp.Data) == "true" {
-						// push success
-						slog.Info("data out push success")
-						break
-					}
+				if task.State == pb.TaskStatus_Deployed{
+					break
+				}else {
+					time.Sleep(5*time.Second)
 				}
-				time.Sleep(5 * time.Second)
 			}
+			outputQueues := make(map[string]chan *pb.Event)
+			// init downstream output buffer
+			for _, opt := range task.Downstream {
+				outputQueues[opt.Id] = make(chan *pb.Event, t.bufferPool[task.Id].Size)
+			}
+			t.bufferPool[task.Id].OutQueue = outputQueues
 
-		}
-	}()
+			cases := make([]reflect.SelectCase, 0, len(outputQueues))
+			keys := make([]string, 0, len(outputQueues))
+			for key, ch := range outputQueues {
+				cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)})
+				keys = append(keys, key)
+			}
+			for len(cases) > 0 {
+				idx, recv, ok := reflect.Select(cases)
+				if !ok {
+					// channal has closed, remove rel channel
+					cases = append(cases[:idx], cases[idx+1:]...)
+					keys = append(keys[:idx], keys[idx+1:]...)
+					continue
+				}
+				event := recv.Interface().(*pb.Event)
+				slog.Info(fmt.Sprintf("Received from output channel %s: %v\n", keys[idx], event))
+				//push data
+				client := *t.eventChanClient[keys[idx]]
+				for {
+					er := client.Send(NewSingleEventReq(event.Data, task.Id, keys[idx]))
+					if er != nil {
+						slog.Error("data out push error")
+					} else {
+						resp, err := client.Recv()
+						if err != nil || resp.EventType != pb.EventType_ACK || string(resp.Data) == "false" {
+							slog.Error("data out push error")
+						} else if string(resp.Data) == "true" {
+							// push success
+							slog.Info("data out push success")
+							break
+						}
+					}
+					time.Sleep(5 * time.Second)
+				}
+
+			}
+		}()
+	}
 	return nil
 }
 

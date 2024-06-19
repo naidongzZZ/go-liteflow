@@ -68,7 +68,7 @@ func TestEventChannel(t *testing.T) {
 }
 
 func TestEventChannelUpstream(t *testing.T) {
-	taskId := "opTaskId1"
+	taskId := "upstreamTask"
 	tm1 := task_manager.NewTaskManager("127.0.0.1:20020", "")
 	t1 := &pb.OperatorTask{
 		Id:         taskId,
@@ -76,20 +76,20 @@ func TestEventChannelUpstream(t *testing.T) {
 		Downstream: make([]*pb.OperatorTask, 0),
 	}
 
-	t1.Downstream = append(t1.Downstream, &pb.OperatorTask{Id: "opTaskId2", TaskManagerId: "127.0.0.1:20021"})
+	t1.Downstream = append(t1.Downstream, &pb.OperatorTask{Id: "insidestreamTask", ClientId: "127.0.0.1:20022", TaskManagerId: "127.0.0.1:20022"})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		tm1.Start(context.Background())
 	}()
-	tm1.RegisterTaskClient("127.0.0.1:20021", "opTaskId2")
 	tm1.RegisterOperatorTask(t1)
+	tm1.RegisterTaskStreamServerClient(t1)
 	time.Sleep(2 * time.Second)
 	for i := 0; i < 5; i++ {
 		tm1.GetBuffer(t1.Id).AddData(task_manager.OutputData, []*pb.Event{{
 			Data:           []byte("hello" + strconv.Itoa(i)),
-			TargetOpTaskId: "opTaskId2",
+			TargetOpTaskId: "insidestreamTask",
 		}})
 		time.Sleep(5 * time.Second)
 	}
@@ -97,23 +97,53 @@ func TestEventChannelUpstream(t *testing.T) {
 	wg.Wait()
 }
 
-func TestEventChannelDownstream(t *testing.T) {
-	tm2 := task_manager.NewTaskManager("127.0.0.1:20021", "")
+func TestEventChannelInsideStream(t *testing.T) {
+	taskId := "insidestreamTask"
+	tm2 := task_manager.NewTaskManager("127.0.0.1:20022", "")
 	t2 := &pb.OperatorTask{
-		Id:       "opTaskId2",
+		Id:       taskId,
 		OpType:   pb.OpType_Map,
 		Upstream: make([]*pb.OperatorTask, 0),
 	}
-	t2.Upstream = append(t2.Upstream, &pb.OperatorTask{Id: "opTaskId1", TaskManagerId: "127.0.0.1:20020"})
+	t2.Upstream = append(t2.Upstream, &pb.OperatorTask{Id: "upstreamTask", ClientId: "127.0.0.1:20020", TaskManagerId: "127.0.0.1:20020"})
+	t2.Downstream = append(t2.Downstream, &pb.OperatorTask{Id: "downstreamTask", ClientId: "127.0.0.1:20021", TaskManagerId: "127.0.0.1:20021"})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		tm2.Start(context.Background())
 	}()
-	tm2.RegisterTaskClient("127.0.0.1:20020", "opTaskId1")
 	tm2.RegisterOperatorTask(t2)
-	
+	tm2.RegisterTaskStreamServerClient(t2)
+	in := tm2.GetBuffer(taskId).InQueue
+	for data := range in {
+		tm2.GetBuffer(t2.Id).AddData(task_manager.OutputData, []*pb.Event{{
+			Data:           data.Data,
+			TargetOpTaskId: "downstreamTask",
+		}})
+		time.Sleep(5 * time.Second)
+	}
+	wg.Wait()
+}
+
+func TestEventChannelDownstream(t *testing.T) {
+	taskId := "downstreamTask"
+	tm2 := task_manager.NewTaskManager("127.0.0.1:20021", "")
+	t2 := &pb.OperatorTask{
+		Id:       taskId,
+		OpType:   pb.OpType_Map,
+		Upstream: make([]*pb.OperatorTask, 0),
+	}
+	t2.Upstream = append(t2.Upstream, &pb.OperatorTask{Id: "upstreamTask", ClientId: "127.0.0.1:20022", TaskManagerId: "127.0.0.1:20022"})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		tm2.Start(context.Background())
+	}()
+	tm2.RegisterOperatorTask(t2)
+	tm2.RegisterTaskStreamServerClient(t2)
+
 	wg.Wait()
 }
 
