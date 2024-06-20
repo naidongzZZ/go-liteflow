@@ -19,32 +19,41 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 	wg.Add(1)
 	// server receive upstream data
 	go func() {
+		var selfTaskId string
+		var buffer *Buffer
 		defer wg.Done()
+		defer func() {
+			// close input queue
+			if buffer != nil && buffer.InQueue != nil {
+				slog.Info("close input data channel")
+				close(buffer.InQueue)
+			}
+		}()
 		for {
 			// recv data push req
 			event, err := stream.Recv()
 			if err == io.EOF {
-				slog.Info("Read all client's msg done \n")
 				// read done.
+				slog.Info("Read all client's msg done\n")
 				break
 			}
 			if err != nil {
 				slog.Error("Failed to receive a event: ", slog.Any("err", err))
 				return
 			}
-			slog.Info("Recv client message:", slog.Any("event", event))
+			slog.Info("===============>Recv client message:", slog.Any("event", event))
 			// TODO distribute event
 			// recv notify info
-			selfTaskId := event.TargetOpTaskId
+			selfTaskId = event.TargetOpTaskId
 			targetTaskId := event.SourceOpTaskId
-			bf := tm.bufferPool[selfTaskId]
-			if bf == nil {
+			buffer = tm.bufferPool[selfTaskId]
+			if buffer == nil {
 				// send response to upstream current download stream has closed rel task
 				// stream.Send()
 				stream.Send(NewAckEventReq("false", selfTaskId, targetTaskId))
 			} else {
 				// input data
-				res := bf.AddData(InputData, []*pb.Event{event})
+				res := buffer.AddData(InputData, []*pb.Event{event})
 				if res {
 					//input success
 					stream.Send(NewAckEventReq("true", selfTaskId, targetTaskId))
@@ -52,7 +61,7 @@ func (tm *taskManager) EventChannel(stream pb.Core_EventChannelServer) error {
 					// input error
 					stream.Send(NewAckEventReq("false", selfTaskId, targetTaskId))
 				}
-			slog.Info("current buffer size:", slog.Any("usage", bf.Usage))
+				// slog.Info("current buffer size:", slog.Any("usage", bf.Usage))
 			}
 		}
 	}()

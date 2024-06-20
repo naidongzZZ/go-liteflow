@@ -2,7 +2,10 @@ package task_manager
 
 import (
 	pb "go-liteflow/pb"
+	"log/slog"
+	"reflect"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -43,13 +46,17 @@ func (b *Buffer) AddData(dataType DataType, data []*pb.Event) bool {
 		}
 	case OutputData:
 		topId := data[0].TargetOpTaskId
-		b.Mu.Lock()
-		outQueue, exists := b.OutQueue[topId]
-		if !exists {
-			outQueue = make(chan *pb.Event, b.Size)
-			b.OutQueue[topId] = outQueue
+		var outQueue chan *pb.Event
+		var exist bool
+		for {
+			outQueue, exist = b.OutQueue[topId]
+			if exist {
+				break
+			} else {
+				time.Sleep(5 * time.Second)
+			}
 		}
-		b.Mu.Unlock()
+
 		for _, d := range data {
 			outQueue <- d
 		}
@@ -67,49 +74,70 @@ func (b *Buffer) AddData(dataType DataType, data []*pb.Event) bool {
 	return true
 }
 
-// dequeue data from rel queue when the datas match the space and exec process success
-func (b *Buffer) RemoveData(dataType DataType, size int, process func([]*pb.Event) error) error {
-	//chose queue
-	var queue *chan *pb.Event
-	switch dataType {
-	case InputData:
-		queue = &b.InQueue
-	case OutputData:
-		d := b.OutQueue[b.TaskId]
-		queue = &d
-	default:
-		return nil
-	}
-	//calculate remove data size
-	curSize := 0
-	data := make([]*pb.Event, 0)
-
-loop:
-	for {
-		select {
-		case d := <-*queue:
-			dataSize := proto.Size(d)
-			if curSize+dataSize >= size {
-				break loop
-			}
-			curSize += dataSize
-			data = append(data, d)
-		default:
-			// no data in chan, break loop
-			break loop
-		}
-	}
-
-	//push data，if has err then repush
-	for {
-		err := process(data)
-		if err == nil {
-			break
-		}
-	}
-	//lock to update usage size
+func (b *Buffer) UpdateUsageWhenOutput(size int) {
 	b.Mu.Lock()
 	defer b.Mu.Unlock()
-	b.Usage -= curSize
+	b.Usage -= size
+	slog.Info("buffer state", slog.Any("usage", b.Usage))
+}
+
+func (b *Buffer) ListenInputQueueAndHandle(process func(*pb.Event) error) error {
+	queue := &b.InQueue
+	for data := range *queue {
+		for {
+			err := process(data)
+			if err == nil {
+				//handle success
+				b.UpdateUsageWhenOutput(proto.Size(data))
+				break
+			} else {
+				time.Sleep(1 * time.Second)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (b *Buffer) LinstenOutputQueueAndPush(clientMap map[string]*pb.Core_EventChannelClient) error {
+	outputQueues := b.OutQueue
+	cases := make([]reflect.SelectCase, 0, len(outputQueues))
+	keys := make([]string, 0, len(outputQueues))
+	for key, ch := range outputQueues {
+		cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)})
+		keys = append(keys, key)
+	}
+	for len(cases) > 0 {
+		// listen output queue data
+		idx, recv, ok := reflect.Select(cases)
+		if !ok {
+			// channal has closed, remove rel channel
+			cases = append(cases[:idx], cases[idx+1:]...)
+			keys = append(keys[:idx], keys[idx+1:]...)
+			continue
+		}
+		event := recv.Interface().(*pb.Event)
+		// slog.Info(fmt.Sprintf("Received from output channel %s: %v\n", keys[idx], event))
+		//push data
+		client := *clientMap[keys[idx]]
+		for {
+			er := client.Send(NewSingleEventReq(event.Data, b.TaskId, keys[idx]))
+			if er != nil {
+				slog.Error("data out push error")
+			} else {
+				resp, err := client.Recv()
+				if err != nil || resp.EventType != pb.EventType_ACK || string(resp.Data) == "false" {
+					slog.Error("data out push error")
+				} else if string(resp.Data) == "true" {
+					// push success
+					slog.Info("<===============data out push success", slog.Any("event", event))
+					go b.UpdateUsageWhenOutput(proto.Size(event))
+					break
+				}
+			}
+			time.Sleep(5 * time.Second)
+		}
+
+	}
 	return nil
 }

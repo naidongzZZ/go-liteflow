@@ -82,6 +82,35 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 	return tm
 }
 
+// register a task to task monitor
+func (t *taskManager) RegisterOperatorTask(task *pb.OperatorTask) error {
+	if t.taskPool[task.Id] != nil {
+		// has registered
+		return errors.New("this task has registered")
+	}
+	t.taskPool[task.Id] = task
+	// init buffer
+	t.initialTaskBuffer(task.Id, 1024)
+	// assign a thread to init output queue and listen them
+	if len(task.Downstream) > 0 {
+		go func() {
+			// register task downstream server client
+			tm.RegisterTaskStreamServerClient(task)
+			buffer := t.bufferPool[task.Id]
+			outputQueues := make(map[string]chan *pb.Event)
+			// init downstream output buffer queue
+			for _, opt := range task.Downstream {
+				outputQueues[opt.Id] = make(chan *pb.Event, buffer.Size)
+			}
+			buffer.OutQueue = outputQueues
+			buffer.LinstenOutputQueueAndPush(t.eventChanClient)
+		}()
+	}
+	
+	return nil
+}
+
+// register task downstream server client
 func (tm *taskManager) RegisterTaskStreamServerClient(task *pb.OperatorTask) error {
 	stream := make([]*pb.OperatorTask, 0)
 	stream = append(stream, task.Downstream...)
@@ -119,7 +148,6 @@ func (tm *taskManager) RegisterTaskStreamServerClient(task *pb.OperatorTask) err
 	task.State = pb.TaskStatus_Deployed
 	return nil
 }
-
 
 func (tm *taskManager) Start(ctx context.Context) {
 
