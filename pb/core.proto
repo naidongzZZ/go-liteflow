@@ -115,25 +115,31 @@ enum ServiceType {
   TaskManager = 2;
 }
 
+// 服务信息
 message ServiceInfo {
-  string id = 1;
-  ServiceType service_type = 2;
-  ServiceStatus service_status = 3;
-  string service_addr = 4;
-  int64 timestamp = 5;
+  string id = 1; // 服务id
+  ServiceType service_type = 2; // 服务类型
+  ServiceStatus service_status = 3; // 服务状态
+  string service_addr = 4; // 服务地址
+  int64 timestamp = 5; // 时间戳
 }
 
+// 心跳请求
 message HeartBeatReq { ServiceInfo service_info = 1; }
 
+// 心跳响应
 message HeartBeatResp { map<string, ServiceInfo> service_infos = 1; }
 
+// 提交任务请求
 message SubmitOpTaskReq {
   Digraph digraph = 1;
   string client_id = 2;
 }
 
+// 提交任务响应
 message SubmitOpTaskResp {}
 
+// 部署任务请求
 message DeployOpTaskReq {
   // use for download executable file
   string client_id = 1;

@@ -3,10 +3,8 @@ package coordinator
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"net"
 	"sync"
-	"time"
 
 	"go-liteflow/internal/core"
 	"go-liteflow/internal/pkg"
@@ -61,8 +59,7 @@ func (co *coordinator) Start(ctx context.Context) {
 
 	co.schedule(ctx)
 
-	listener, err := net.Listen("tcp",
-		co.coordinatorInfo.ServiceAddr)
+	listener, err := net.Listen("tcp", co.coordinatorInfo.ServiceAddr)
 	if err != nil {
 		panic(err)
 	}
@@ -75,6 +72,7 @@ func (co *coordinator) ID() string {
 	return co.coordinatorInfo.Id
 }
 
+// 注册服务信息
 func (co *coordinator) RegistServiceInfo(si *pb.ServiceInfo) (err error) {
 	if err = uuid.Validate(si.Id); err != nil {
 		return err
@@ -103,6 +101,7 @@ func (co *coordinator) RegistServiceInfo(si *pb.ServiceInfo) (err error) {
 	return nil
 }
 
+// 获取服务信息
 func (co *coordinator) GetServiceInfo(ids ...string) map[string]*pb.ServiceInfo {
 	co.mux.Lock()
 	defer co.mux.Unlock()
@@ -115,67 +114,4 @@ func (co *coordinator) GetServiceInfo(ids ...string) map[string]*pb.ServiceInfo 
 		tmp[id] = co.serviceInfos[id]
 	}
 	return tmp
-}
-
-func (co *coordinator) GetAvailableTaskManager() (taskManangerId string, client pb.CoreClient) {
-	co.mux.Lock()
-	defer co.mux.Unlock()
-
-	var info *pb.ServiceInfo
-	for _, si := range co.serviceInfos {
-		if si.ServiceStatus == pb.ServiceStatus_SsRunning {
-			info = si
-			break
-		}
-	}
-	if info == nil {
-		return
-	}
-	taskManangerId = info.Id
-
-	obj, ok := co.clientConns[info.ServiceAddr]
-	if !ok {
-		return
-	}
-	return taskManangerId, obj
-}
-
-func (co *coordinator) schedule(ctx context.Context) {
-
-	// TODO downstream info, task_maanager_id
-	go func() {
-		for {
-			select {
-			case <-time.NewTicker(3 * time.Second).C:
-				co.digraphMux.Lock()
-				for clientId, di := range co.taskDigraph {
-					for _, task := range di.Adj {
-						if task.State > pb.TaskStatus_Deployed {
-							continue
-						}
-
-						tmId, client := co.GetAvailableTaskManager()
-
-						req := &pb.DeployOpTaskReq{
-							ClientId: clientId,
-							Digraph: &pb.Digraph{
-								GraphId: di.GraphId,
-								Adj:     []*pb.OperatorTask{task}},
-						}
-						// TODO DeployOpTask means immediate execution
-						_, err := client.DeployOpTask(ctx, req)
-						if err != nil {
-							slog.Error("deploy task.", slog.Any("err", err))
-							continue
-						}
-						task.State = pb.TaskStatus_Deployed
-						task.TaskManagerId = tmId
-					}
-				}
-				co.digraphMux.Unlock()
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
 }
