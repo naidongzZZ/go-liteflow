@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"go-liteflow/internal/core"
 	pb "go-liteflow/pb"
 	"log/slog"
 	"time"
@@ -28,33 +29,22 @@ func (co *coordinator) schedule(ctx context.Context) {
 }
 
 // 获取空闲可用的task manager
-func (co *coordinator) getIdleTaskManager() (taskManangerId string, client pb.CoreClient) {
+func (co *coordinator) getIdleTaskManager() (srv *core.Service) {
 	co.mux.Lock()
 	defer co.mux.Unlock()
 
-	var info *pb.ServiceInfo
 	for _, si := range co.serviceInfos {
 		if si.ServiceStatus == pb.ServiceStatus_SsRunning {
-			info = si
-			break
+			return si
 		}
 	}
-	if info == nil {
-		return
-	}
-	taskManangerId = info.Id
-
-	obj, ok := co.clientConns[info.ServiceAddr]
-	if !ok {
-		return
-	}
-	return taskManangerId, obj
+	return nil
 }
 
 func (co *coordinator) deployPendingTasks(ctx context.Context) error {
 	// 获取空闲的 task manager
-	taskManagerId, _ := co.getIdleTaskManager()
-	if taskManagerId == "" {
+	mg := co.getIdleTaskManager()
+	if mg == nil {
 		return nil // 没有可用的 task manager，暂时跳过
 	}
 

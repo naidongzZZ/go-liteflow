@@ -46,16 +46,10 @@ func main() {
 			return nil
 		}
 
-		slog.Info("app start.",
-			slog.String("run_mode", runMode), 
-			slog.String("addr", addr))
+		slog.Info("app start.",slog.String("run_mode", runMode),slog.String("addr", addr))
 
 		if runMode == "task_manager" {
 			coordAddr := ctx.String("coord_addr")
-			if len(coordAddr) == 0 {
-				slog.Error("coordinator's address is nil")
-				return nil
-			}
 
 			tm := task_manager.NewTaskManager(addr, coordAddr)
 			slog.Info("task_manager info.", slog.String("ID", tm.ID()))
@@ -64,6 +58,7 @@ func main() {
 		} else if runMode == "coordinator" {
 			co := coordinator.NewCoordinator(addr)
 			slog.Info("coordinator info.", slog.String("ID", co.ID()))
+
 			co.Start(context.Background())
 			slog.Info("coordinator info, coordinator exist")
 		}
@@ -72,7 +67,7 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		slog.Error("server exit: %v", err)
+		slog.Error("server exit", slog.Any("err", err))
 	}
 
 }

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -15,18 +16,18 @@ import (
 type taskManager struct {
 	core.Comm
 
-	taskManagerInfo *pb.ServiceInfo
-
-	coordinatorInfo   *pb.ServiceInfo
-	coordinatorClient pb.CoreClient
+	// 服务id
+	Id string
+	// coordinator的id
+	CoId string
 
 	srv *grpc.Server
 
 	mux sync.Mutex
-	// key: task_manager_id, val: service_addr, info
-	serviceInfos map[string]*pb.ServiceInfo
-	// key: service_addr, val: grpc_client
-	clientConns map[string]pb.CoreClient
+	// key: 服务id
+	serviceInfos map[string]*core.Service
+
+
 	// key：task_manager_id, val: RemoteEventChannel
 	TaskManangerEventChans map[string]*Channel
 
@@ -53,97 +54,51 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 	if tm != nil {
 		return tm
 	}
+	if len(coordAddr) == 0 {
+		panic("coordinator's address is nil")
+	}
+
 	ranUid, err := uuid.NewRandom()
 	if err != nil {
 		panic(err)
 	}
 
 	tm = &taskManager{
-		taskManagerInfo: &pb.ServiceInfo{
-			Id:          ranUid.String(),
-			ServiceAddr: addr,
-			ServiceType: pb.ServiceType_TaskManager,
-		},
-		coordinatorInfo: &pb.ServiceInfo{
-			ServiceAddr: coordAddr,
-		},
-		serviceInfos:             make(map[string]*pb.ServiceInfo),
-		clientConns:              make(map[string]pb.CoreClient),
+		Id:          			  ranUid.String(),
+		serviceInfos:             make(map[string]*core.Service),
 		tasks:                    make(map[string]*pb.OperatorTask),
 		TaskManangerEventChans:   make(map[string]*Channel),
 		taskChannels:             make(map[string]*Channel),
 		TaskManagerBufferMonitor: *NewTaskManagerBufferMonitor(),
 	}
+
+	tm.serviceInfos[tm.Id] = &core.Service{	
+		ServiceInfo: pb.ServiceInfo{
+			Id:            tm.Id,
+			ServiceAddr:   addr,
+			ServiceType:   pb.ServiceType_TaskManager,
+			ServiceStatus: pb.ServiceStatus_SsRunning,
+			Timestamp:     time.Now().Unix()},
+	}
+	
+	coCli, err := core.NewCoreClient(coordAddr)
+	if err != nil {
+		slog.Error("new coordinator client.", slog.Any("err", err))
+		panic(err)
+	}	
+	tm.serviceInfos[tm.CoId] = &core.Service{
+		ServiceInfo: pb.ServiceInfo{
+			Id:            tm.CoId,
+			ServiceAddr:   coordAddr,
+			ServiceType:   pb.ServiceType_Coordinator,
+			ServiceStatus: pb.ServiceStatus_SsRunning,
+			Timestamp:     time.Now().Unix()},
+		ClientConn: coCli,	
+	}
+
 	tm.srv = grpc.NewServer()
 	pb.RegisterCoreServer(tm.srv, tm)
 	return tm
-}
-
-// register a task to task monitor
-func (t *taskManager) RegisterOperatorTask(task *pb.OperatorTask) error {
-	if t.taskPool[task.Id] != nil {
-		// has registered
-		return errors.New("this task has registered")
-	}
-	t.taskPool[task.Id] = task
-	// init buffer
-	t.initialTaskBuffer(task.Id, 1024)
-	// assign a thread to init output queue and listen them
-	if len(task.Downstream) > 0 {
-		go func() {
-			// register task downstream server client
-			tm.RegisterTaskStreamServerClient(task)
-			buffer := t.bufferPool[task.Id]
-			outputQueues := make(map[string]chan *pb.Event)
-			// init downstream output buffer queue
-			for _, opt := range task.Downstream {
-				outputQueues[opt.Id] = make(chan *pb.Event, buffer.Size)
-			}
-			buffer.OutQueue = outputQueues
-			buffer.LinstenOutputQueueAndPush(t.eventChanClient)
-		}()
-	}
-	
-	return nil
-}
-
-// register task downstream server client
-func (tm *taskManager) RegisterTaskStreamServerClient(task *pb.OperatorTask) error {
-	stream := make([]*pb.OperatorTask, 0)
-	stream = append(stream, task.Downstream...)
-
-	var wg sync.WaitGroup
-	existConn := make(map[string]bool)
-	for _, opTask := range stream {
-		if _, e := existConn[opTask.Id]; e {
-			//exist rel client
-			continue
-		}
-		existConn[opTask.Id] = true
-		wg.Add(1)
-		go func() {
-			addr := opTask.ClientId
-			conn, _ := grpc.Dial(addr, grpc.WithInsecure())
-			coreClient := pb.NewCoreClient(conn)
-			tm.clientConns[addr] = coreClient
-			for {
-				client, cerr := coreClient.EventChannel(context.Background())
-				if cerr != nil {
-					// return cerr
-					time.Sleep(1 * time.Second)
-				} else {
-					tm.eventChanClient[opTask.Id] = &client
-					wg.Done()
-					break
-				}
-			}
-		}()
-
-	}
-	wg.Wait()
-	// client init finish , start running task
-	task.State = pb.TaskStatus_Deployed
-	return nil
 }
 
 func (tm *taskManager) Start(ctx context.Context) {
@@ -156,13 +111,13 @@ func (tm *taskManager) Start(ctx context.Context) {
 
 	tm.schedule(ctx)
 
-	listener, err := net.Listen("tcp", tm.taskManagerInfo.ServiceAddr)
+	listener, err := net.Listen("tcp", tm.SelfServiceInfo().ServiceAddr)
 	if err != nil {
 		slog.Error("new listener.", slog.Any("err", err))
 		panic(err)
 	}
 
-	slog.Info("task_manager grpc server start success.")
+	slog.Info("task_manager grpc server start success")
 	if err = tm.srv.Serve(listener); err != nil {
 		slog.Error("grpc serve fail.", slog.Any("err", err))
 		panic(err)
@@ -174,44 +129,19 @@ func (tm *taskManager) Stop(ctx context.Context) {
 }
 
 func (tm *taskManager) Coordinator() pb.CoreClient {
-	if tm.coordinatorClient != nil {
-		return tm.coordinatorClient
-	}
-
-	co := tm.coordinatorInfo
-	if co == nil || len(co.ServiceAddr) == 0 {
-		panic("coordinator info is nil")
-	}
-
-	conn, err := grpc.Dial(co.ServiceAddr, grpc.WithInsecure())
-	if err != nil {
-		panic("connect coordinator fail: " + err.Error())
-	}
-	tm.coordinatorClient = pb.NewCoreClient(conn)
-	return tm.coordinatorClient
+	return tm.serviceInfos[tm.CoId].ClientConn
 }
 
 func (tm *taskManager) ID() string {
-	return tm.taskManagerInfo.Id
+	return tm.Id
+}
+
+func (tm *taskManager) SelfServiceInfo() *core.Service {
+	return tm.serviceInfos[tm.Id]
 }
 
 func (tm *taskManager) GetBuffer(opId string) *Buffer {
 	return tm.bufferPool[opId]
-}
-
-func (tm *taskManager) GetOperatorNodeClient(opId string) pb.Core_EventChannelClient {
-	var client pb.Core_EventChannelClient
-	var err error
-	client = *tm.eventChanClient[opId]
-	if client == nil && tm.clientConns[opId] != nil {
-		client, err = tm.clientConns[opId].EventChannel(context.Background())
-		if err != nil {
-			slog.Error("Failed to create event client : %v", err)
-			return nil
-		}
-		tm.eventChanClient[opId] = &client
-	}
-	return client
 }
 
 func (tm *taskManager) schedule(ctx context.Context) {
