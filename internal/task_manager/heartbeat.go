@@ -16,7 +16,7 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 
 			req := &pb.HeartBeatReq{ServiceInfo: &tm.SelfServiceInfo().ServiceInfo}
 
-			resp, err := tm.Coordinator().SendHeartBeat(ctx, req)
+			resp, err := tm.Coordinator().HeartBeat(ctx, req)
 			if err != nil {
 				slog.Error("send heart beat to coordinator.", slog.Any("err", err))
 				continue

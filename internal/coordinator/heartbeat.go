@@ -11,7 +11,7 @@ import (
 )
 
 // Coordinator 接收心跳, 注册服务信息
-func (co *coordinator) SendHeartBeat(ctx context.Context, req *pb.HeartBeatReq) (resp *pb.HeartBeatResp, err error) {
+func (co *coordinator) HeartBeat(ctx context.Context, req *pb.HeartBeatReq) (resp *pb.HeartBeatResp, err error) {
 	resp = new(pb.HeartBeatResp)
 	if req == nil || req.ServiceInfo == nil {
 		return resp, errors.New("args is nil") 
