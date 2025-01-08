@@ -132,8 +132,14 @@ message HeartBeatResp { map<string, ServiceInfo> service_infos = 1; }
 
 // 提交任务请求
 message SubmitOpTaskReq {
+  // 任务拓扑
   Digraph digraph = 1;
+  // 客户端id
   string client_id = 2;
+  // 可执行文件
+  bytes executable_file = 3;
+  // 可执行文件的hash
+  string executable_file_hash = 4;
 }
 
 // 提交任务响应

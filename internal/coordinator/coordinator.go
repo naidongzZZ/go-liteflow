@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go-liteflow/internal/core"
+	"go-liteflow/internal/pkg/storager"
 	pb "go-liteflow/pb"
 
 	"github.com/google/uuid"
@@ -28,6 +29,9 @@ type coordinator struct {
 	// key: client_id, val: pb.disgraph
 	digraphMux  sync.Mutex
 	taskDigraph map[string]*pb.Digraph
+
+	// 本地文件存储
+	storager storager.Storager
 }
 
 func NewCoordinator(addr string) *coordinator {
@@ -41,6 +45,7 @@ func NewCoordinator(addr string) *coordinator {
 		Id:          ranUid.String(),
 		serviceInfos: make(map[string]*core.Service),
 		taskDigraph:  make(map[string]*pb.Digraph),
+		storager:     storager.NewStorager(context.Background(), "./task_ef"),
 	}
 
 	// 将自身信息注册到serviceInfos
