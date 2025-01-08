@@ -2,12 +2,10 @@ package coordinator
 
 import (
 	"context"
-	"go-liteflow/internal/pkg"
 	pb "go-liteflow/pb"
 	"log/slog"
 
 	"github.com/google/uuid"
-	"github.com/jinzhu/copier"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -17,8 +15,23 @@ func (co *coordinator) SubmitOpTask(ctx context.Context, req *pb.SubmitOpTaskReq
 	resp = new(pb.SubmitOpTaskResp)
 
 	slog.Debug("Recv submit op task.", slog.Any("req", req))
+	if uuid.Validate(req.ClientId) != nil {
+		return resp, status.Errorf(codes.InvalidArgument, "client id is invalid")
+	}
 
+	err = co.storager.Write(ctx, req.Ef, req.EfHash)
+	if err != nil {
+		slog.Error("Write executable file failed", slog.Any("err", err))
+		return resp, status.Errorf(codes.Internal, "write executable file failed")
+	}
 	
+	// TODO 先简单处理
+	digraph := &pb.Digraph{EfHash: req.EfHash}
+
+	co.digraphMux.Lock()
+	defer co.digraphMux.Unlock()
+
+	co.taskDigraph[req.ClientId] = digraph
 
 	return resp, nil
 }

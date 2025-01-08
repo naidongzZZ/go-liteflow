@@ -26,12 +26,14 @@ service core {
   rpc FindOpTask(FindOpTaskReq) returns (FindOpTaskResp) {}
 }
 
-// directed graph
+// directed graph 有向任务图
 message Digraph {
   // graph task id
   string graph_id = 1;
   // tasks
   repeated OperatorTask adj = 2;
+  // 可执行文件hash
+  string ef_hash = 3;
 }
 
 // operator type
@@ -137,9 +139,9 @@ message SubmitOpTaskReq {
   // 客户端id
   string client_id = 2;
   // 可执行文件
-  bytes executable_file = 3;
+  bytes ef = 3;
   // 可执行文件的hash
-  string executable_file_hash = 4;
+  string ef_hash = 4;
 }
 
 // 提交任务响应
