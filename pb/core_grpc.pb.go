@@ -28,7 +28,7 @@ type CoreClient interface {
 	DirectedEventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_DirectedEventChannelClient, error)
 	// TODO raft
 	// Send heart beat to coordinator or Ask if the coordinator is alive
-	SendHeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error)
+	HeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error)
 	// Submit tasks to the coordinator
 	SubmitOpTask(ctx context.Context, in *SubmitOpTaskReq, opts ...grpc.CallOption) (*SubmitOpTaskResp, error)
 	// Deploy tasks to task manager
@@ -116,9 +116,9 @@ func (x *coreDirectedEventChannelClient) CloseAndRecv() (*EventChannelResp, erro
 	return m, nil
 }
 
-func (c *coreClient) SendHeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error) {
+func (c *coreClient) HeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error) {
 	out := new(HeartBeatResp)
-	err := c.cc.Invoke(ctx, "/pb.core/SendHeartBeat", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/pb.core/HeartBeat", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ type CoreServer interface {
 	DirectedEventChannel(Core_DirectedEventChannelServer) error
 	// TODO raft
 	// Send heart beat to coordinator or Ask if the coordinator is alive
-	SendHeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error)
+	HeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error)
 	// Submit tasks to the coordinator
 	SubmitOpTask(context.Context, *SubmitOpTaskReq) (*SubmitOpTaskResp, error)
 	// Deploy tasks to task manager
@@ -238,8 +238,8 @@ func (UnimplementedCoreServer) EventChannel(Core_EventChannelServer) error {
 func (UnimplementedCoreServer) DirectedEventChannel(Core_DirectedEventChannelServer) error {
 	return status.Errorf(codes.Unimplemented, "method DirectedEventChannel not implemented")
 }
-func (UnimplementedCoreServer) SendHeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendHeartBeat not implemented")
+func (UnimplementedCoreServer) HeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method HeartBeat not implemented")
 }
 func (UnimplementedCoreServer) SubmitOpTask(context.Context, *SubmitOpTaskReq) (*SubmitOpTaskResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitOpTask not implemented")
@@ -324,20 +324,20 @@ func (x *coreDirectedEventChannelServer) Recv() (*EventChannelReq, error) {
 	return m, nil
 }
 
-func _Core_SendHeartBeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Core_HeartBeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(HeartBeatReq)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(CoreServer).SendHeartBeat(ctx, in)
+		return srv.(CoreServer).HeartBeat(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/pb.core/SendHeartBeat",
+		FullMethod: "/pb.core/HeartBeat",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(CoreServer).SendHeartBeat(ctx, req.(*HeartBeatReq))
+		return srv.(CoreServer).HeartBeat(ctx, req.(*HeartBeatReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -461,8 +461,8 @@ var Core_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*CoreServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "SendHeartBeat",
-			Handler:    _Core_SendHeartBeat_Handler,
+			MethodName: "HeartBeat",
+			Handler:    _Core_HeartBeat_Handler,
 		},
 		{
 			MethodName: "SubmitOpTask",

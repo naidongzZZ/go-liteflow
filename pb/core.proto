@@ -11,7 +11,7 @@ service core {
   rpc DirectedEventChannel(stream EventChannelReq) returns (EventChannelResp) {}
   // TODO raft
   // Send heart beat to coordinator or Ask if the coordinator is alive
-  rpc SendHeartBeat(HeartBeatReq) returns (HeartBeatResp) {}
+  rpc HeartBeat(HeartBeatReq) returns (HeartBeatResp) {}
   // Submit tasks to the coordinator
   rpc SubmitOpTask(SubmitOpTaskReq) returns (SubmitOpTaskResp) {}
   // Deploy tasks to task manager
