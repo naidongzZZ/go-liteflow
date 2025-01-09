@@ -28,11 +28,6 @@ type taskManager struct {
 	serviceInfos map[string]*core.Service
 
 
-	// key：task_manager_id, val: RemoteEventChannel
-	TaskManangerEventChans map[string]*Channel
-
-	TaskManagerBufferMonitor
-
 	digraphMux sync.Mutex
 	// key: client_id, val: pb.disgraph
 	// taskDigraph map[string]*pb.Digraph
@@ -41,7 +36,7 @@ type taskManager struct {
 
 	chMux sync.Mutex
 	// key: optask_id, val: Channel
-	taskChannels map[string]*Channel
+	//taskChannels map[string]*Channel
 }
 
 var tm *taskManager
@@ -67,9 +62,6 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		Id:          			  ranUid.String(),
 		serviceInfos:             make(map[string]*core.Service),
 		tasks:                    make(map[string]*pb.OperatorTask),
-		TaskManangerEventChans:   make(map[string]*Channel),
-		taskChannels:             make(map[string]*Channel),
-		TaskManagerBufferMonitor: *NewTaskManagerBufferMonitor(),
 	}
 
 	tm.serviceInfos[tm.Id] = &core.Service{	
@@ -140,9 +132,6 @@ func (tm *taskManager) SelfServiceInfo() *core.Service {
 	return tm.serviceInfos[tm.Id]
 }
 
-func (tm *taskManager) GetBuffer(opId string) *Buffer {
-	return tm.bufferPool[opId]
-}
 
 func (tm *taskManager) schedule(ctx context.Context) {
 	// TODO Currently, task scheduling is not supported. start task by ManageOpTask method
@@ -154,45 +143,3 @@ func (tm *taskManager) schedule(ctx context.Context) {
 	// TODO notify optask status
 }
 
-func (tm *taskManager) RegisterChannel(channels ...*Channel) {
-	if len(channels) == 0 {
-		return
-	}
-	for _, ch := range channels {
-		if ch.opTaskId != "" {
-			tm.chMux.Lock()
-			tm.taskChannels[ch.opTaskId] = ch
-			tm.chMux.Unlock()
-			continue
-		}
-		if ch.taskManagerId != "" {
-			tm.mux.Lock()
-			tm.TaskManangerEventChans[ch.taskManagerId] = ch
-			tm.mux.Unlock()
-			continue
-		}
-	}
-}
-
-func (tm *taskManager) GetChannel(clientId, optaskId string) (ch *Channel) {
-	tm.chMux.Lock()
-	ch = tm.taskChannels[optaskId]
-	tm.chMux.Unlock()
-	if ch != nil {
-		return
-	}
-
-	req := &pb.FindOpTaskReq{ClientId: clientId, OpTaskId: optaskId}
-	resp, err := tm.Coordinator().FindOpTask(context.TODO(), req)
-	if err != nil {
-		slog.Error("find opTask.", slog.Any("err", err))
-		return nil
-	}
-	if resp == nil || resp.TaskManagerId == "" {
-		return nil
-	}
-	tm.mux.Lock()
-	defer tm.mux.Unlock()
-	ch = tm.TaskManangerEventChans[resp.TaskManagerId]
-	return
-}

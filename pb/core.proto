@@ -8,7 +8,7 @@ service core {
   // Event channels between task managers
   rpc EventChannel(stream Event) returns (stream Event) {}
   // Deprecated: dont use
-  rpc DirectedEventChannel(stream EventChannelReq) returns (EventChannelResp) {}
+  // rpc DirectedEventChannel(stream EventChannelReq) returns (EventChannelResp) {}
   // TODO raft
   // Send heart beat to coordinator or Ask if the coordinator is alive
   rpc HeartBeat(HeartBeatReq) returns (HeartBeatResp) {}
@@ -17,11 +17,11 @@ service core {
   // Deploy tasks to task manager
   rpc DeployOpTask(DeployOpTaskReq) returns (DeployOpTaskResp) {}
   // Manage tasks status
-  rpc ManageOpTask(ManageOpTaskReq) returns (ManageOpTaskResp) {}
+  // rpc ManageOpTask(ManageOpTaskReq) returns (ManageOpTaskResp) {}
   // Report task's infomation to coordinator
   rpc ReportOpTask(ReportOpTaskReq) returns (ReportOpTaskResp) {}
   // Download executable file
-  rpc DownloadOpTaskEF(DownloadReq) returns (stream DownloadResp) {}
+  // rpc DownloadOpTaskEF(DownloadReq) returns (stream DownloadResp) {}
   // Find task info
   rpc FindOpTask(FindOpTaskReq) returns (FindOpTaskResp) {}
 }
@@ -62,7 +62,7 @@ message OperatorTask {
   // operator type
   OpType op_type = 3;
   // operator identity
-  string op_id = 4;
+  // string op_id = 4;
   // task manager identity
   string task_manager_id = 5;
   // task status
@@ -140,8 +140,6 @@ message SubmitOpTaskReq {
   string client_id = 2;
   // 可执行文件
   bytes ef = 3;
-  // 可执行文件的hash
-  string ef_hash = 4;
 }
 
 // 提交任务响应
@@ -154,7 +152,11 @@ message DeployOpTaskReq {
   // task graph and task info
   Digraph digraph = 2;
   // need deploy task
-  repeated string op_task_ids = 3;
+  // repeated string op_task_ids = 3;
+  // 可执行文件hash
+  string ef_hash = 3;
+  // 可执行文件
+  bytes ef = 4;
 }
 
 message DeployOpTaskResp {}
@@ -185,7 +187,10 @@ message ReportOpTaskResp {
   string task_manager_id = 1;
 }
 
-message DownloadReq { string client_id = 1; }
+message DownloadReq { 
+  string client_id = 1;
+  string ef_hash = 2;
+}
 
 message DownloadResp { bytes file_bytes = 1; }
 

@@ -71,3 +71,16 @@ func (co *coordinator) GetServiceInfo(ids ...string) map[string]*pb.ServiceInfo 
 	}
 	return tmp
 }
+
+// 获取空闲的服务
+func (co *coordinator) GetIdle(st pb.ServiceType, ss pb.ServiceStatus) (srv []*core.Service) {
+	co.mux.Lock()
+	defer co.mux.Unlock()
+
+	for _, si := range co.serviceInfos {
+		if si.ServiceType == st && si.ServiceStatus == ss {
+			srv = append(srv, si)
+		}
+	}
+	return srv
+}

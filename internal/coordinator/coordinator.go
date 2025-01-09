@@ -30,6 +30,9 @@ type coordinator struct {
 	digraphMux  sync.Mutex
 	taskDigraph map[string]*pb.Digraph
 
+	// 调度互斥锁
+	scheduleMux sync.Mutex
+
 	// 本地文件存储
 	storager storager.Storager
 }

@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"go-liteflow/internal/pkg"
 	pb "go-liteflow/pb"
 	"log/slog"
 
@@ -19,24 +20,29 @@ func (co *coordinator) SubmitOpTask(ctx context.Context, req *pb.SubmitOpTaskReq
 		return resp, status.Errorf(codes.InvalidArgument, "client id is invalid")
 	}
 
-	err = co.storager.Write(ctx, req.Ef, req.EfHash)
+	// 校验任务拓扑
+	if err := pkg.ValidateDigraph(req.Digraph); err != nil {
+		slog.Warn("validate digraph failed", slog.Any("err", err))
+		return resp, status.Error(codes.InvalidArgument, "")
+	}
+
+	// 将可执行文件写入本地
+	err = co.storager.Write(ctx, req.Ef, req.Digraph.EfHash)
 	if err != nil {
 		slog.Error("Write executable file failed", slog.Any("err", err))
 		return resp, status.Errorf(codes.Internal, "write executable file failed")
 	}
-	
+
 	// TODO 先简单处理
-	digraph := &pb.Digraph{EfHash: req.EfHash}
 
 	co.digraphMux.Lock()
 	defer co.digraphMux.Unlock()
 
-	co.taskDigraph[req.ClientId] = digraph
+	// 将任务拓扑写入缓存
+	co.taskDigraph[req.ClientId] = req.Digraph
 
 	return resp, nil
 }
-
-
 
 func (co *coordinator) ReportOpTask(ctx context.Context, req *pb.ReportOpTaskReq) (resp *pb.ReportOpTaskResp, err error) {
 	resp = new(pb.ReportOpTaskResp)
@@ -80,4 +86,21 @@ func (co *coordinator) FindOpTask(ctx context.Context, req *pb.FindOpTaskReq) (r
 		}
 	}
 	return
+}
+
+// 获取任务拓扑
+func (co *coordinator) GetDigraph() (digraphs []*pb.Digraph) {
+	co.digraphMux.Lock()
+	defer co.digraphMux.Unlock()
+
+	for _, digraph := range co.taskDigraph {
+		for _, task := range digraph.Adj {
+			// 返回存在状态为Ready的任务
+			if task.State == pb.TaskStatus_Ready {
+				digraphs = append(digraphs, digraph)
+				break
+			}
+		}
+	}
+	return nil
 }
