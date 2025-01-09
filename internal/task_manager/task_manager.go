@@ -3,6 +3,7 @@ package task_manager
 import (
 	"context"
 	"go-liteflow/internal/core"
+	"go-liteflow/internal/pkg/storager"
 	pb "go-liteflow/pb"
 	"log/slog"
 	"net"
@@ -29,14 +30,14 @@ type taskManager struct {
 
 
 	digraphMux sync.Mutex
-	// key: client_id, val: pb.disgraph
-	// taskDigraph map[string]*pb.Digraph
-	// key: optask_id, val: pb.OperatorTask
-	tasks map[string]*pb.OperatorTask
+	// key: optask_id, val: *pb.Digraph
+	tasks map[string]*pb.Digraph
 
 	chMux sync.Mutex
 	// key: optask_id, val: Channel
 	//taskChannels map[string]*Channel
+
+	storager storager.Storager
 }
 
 var tm *taskManager
@@ -61,7 +62,8 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 	tm = &taskManager{
 		Id:          			  ranUid.String(),
 		serviceInfos:             make(map[string]*core.Service),
-		tasks:                    make(map[string]*pb.OperatorTask),
+		tasks:                    make(map[string]*pb.Digraph),
+		storager:                 storager.NewStorager(context.Background(), "/tmp/task_ef"),
 	}
 
 	tm.serviceInfos[tm.Id] = &core.Service{	

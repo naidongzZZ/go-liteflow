@@ -47,7 +47,7 @@ func (co *coordinator) deployReadyTasks(ctx context.Context) error {
 		// 轮询分配
 		assign(mgs, digraph.Adj)
 		// 发射任务
-		emit(ctx, mgs, digraph)
+		co.emit(ctx, mgs, digraph)
 		// 标记任务状态为Running
 		mark(digraph.Adj, pb.TaskStatus_Running)
 	}
@@ -80,11 +80,17 @@ func mark(tasks []*pb.OperatorTask, status pb.TaskStatus) {
 	}
 }
 
-func emit(ctx context.Context, srvs []*core.Service, digraph *pb.Digraph) {
+func (co *coordinator) emit(ctx context.Context, srvs []*core.Service, digraph *pb.Digraph) {
 
 	m := make(map[string]*core.Service)
 	for _, srv := range srvs {
 		m[srv.Id] = srv
+	}
+
+	ef, err := co.storager.Read(ctx, digraph.EfHash)
+	if err != nil {
+		slog.Error("read ef failed", slog.Any("err", err))
+		return
 	}
 
 	for _, task := range digraph.Adj {
@@ -96,6 +102,8 @@ func emit(ctx context.Context, srvs []*core.Service, digraph *pb.Digraph) {
 
 		// 部署任务
 		_, err := srv.ClientConn.DeployOpTask(ctx, &pb.DeployOpTaskReq{
+			Ef:      ef,
+			EfHash:  digraph.EfHash,
 			Digraph: &pb.Digraph{
 				GraphId: digraph.GraphId,
 				EfHash:  digraph.EfHash,

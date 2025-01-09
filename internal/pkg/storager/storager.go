@@ -16,6 +16,8 @@ type Storager interface {
 	Write(ctx context.Context, ef []byte, hash string) (err error)
 	// 读取可执行文件
 	Read(ctx context.Context, hash string) (ef []byte, err error)
+	// 获取可执行文件路径
+	GetExecFilePath(hash string) string
 }
 
 type localStorager struct {
@@ -67,4 +69,12 @@ func (ls *localStorager) Read(ctx context.Context, hash string) (ef []byte, err 
 	}
 
 	return ef, nil
+}
+
+func (ls *localStorager) GetExecFilePath(hash string) string {
+	filepath := fmt.Sprintf("%s/%s", ls.path, hash)
+	if _, err := os.Stat(filepath); os.IsNotExist(err) {
+		return ""
+	}
+	return filepath
 }

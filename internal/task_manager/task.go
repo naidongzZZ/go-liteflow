@@ -2,9 +2,9 @@ package task_manager
 
 import (
 	"context"
-	"go-liteflow/internal/pkg"
 	pb "go-liteflow/pb"
 	"log/slog"
+	"os/exec"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -14,26 +14,43 @@ import (
 func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq) (resp *pb.DeployOpTaskResp, err error) {
 	resp = new(pb.DeployOpTaskResp)
 
-	tm.digraphMux.Lock()
-	defer tm.digraphMux.Unlock()
-
-	opTaskIds := make([]string, 0)
-	for i := range req.Digraph.Adj {
-		// validate opTask
-		opTask := req.Digraph.Adj[i]
-
-		if e := pkg.ValidateOpTask(opTask); e != nil {
-			slog.Warn("validate optask.", slog.Any("err", e))
-			return resp, status.Error(codes.InvalidArgument, "")
-		}
-
-		// TODO download plugin.so
-
-		slog.Debug("Deploy Optask:%s to TaskManager:%s", opTask.Id, tm.ID())
-		tm.tasks[opTask.Id] = req.Digraph.Adj[i]
-		opTaskIds = append(opTaskIds, opTask.Id)
+	err = tm.storager.Write(ctx, req.Ef, req.EfHash)
+	if err != nil {
+		slog.Error("write ef failed", slog.Any("err", err))
+		return resp, status.Error(codes.Internal, "")
 	}
 
+	if len(req.Digraph.Adj) != 1 {
+		slog.Error("invalid digraph", slog.Any("digraph", req.Digraph))
+		return resp, status.Error(codes.InvalidArgument, "")
+	}
+
+	task := req.Digraph.Adj[0]
+	slog.Debug("Deploy Optask:%s to TaskManager:%s", task.Id, tm.ID())
+	slog.Debug("Task: %+v", task)
+	
+	tm.tasks[task.Id] = req.Digraph
+	task.State = pb.TaskStatus_Running
+
+	// 执行任务
+	RunnerPool.Run(ctx, func(c context.Context) {
+
+		filepath := tm.storager.GetExecFilePath(req.EfHash)
+		if filepath == "" {
+			slog.Error("exec file not found", slog.Any("hash", req.EfHash))
+			return
+		}
+
+		slog.Info("tm exec file", slog.Any("filepath", filepath), slog.Any("task", task.Id), slog.Any("optask", task.OpType))
+		cmd := exec.Command(filepath)
+		err = cmd.Run()
+		if err != nil {
+			slog.Error("exec file failed", slog.Any("err", err))
+			return
+		}
+
+		// TODO 设置输入输出
+	})
 
 	return resp, nil
 }

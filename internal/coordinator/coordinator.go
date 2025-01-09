@@ -48,7 +48,7 @@ func NewCoordinator(addr string) *coordinator {
 		Id:          ranUid.String(),
 		serviceInfos: make(map[string]*core.Service),
 		taskDigraph:  make(map[string]*pb.Digraph),
-		storager:     storager.NewStorager(context.Background(), "./task_ef"),
+		storager:     storager.NewStorager(context.Background(), "/tmp/task_ef"),
 	}
 
 	// 将自身信息注册到serviceInfos
