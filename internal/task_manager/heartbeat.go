@@ -3,6 +3,7 @@ package task_manager
 import (
 	"context"
 	"go-liteflow/internal/core"
+	"go-liteflow/internal/pkg/log"
 	pb "go-liteflow/pb"
 	"log/slog"
 	"time"
@@ -13,9 +14,7 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
-
 			req := &pb.HeartBeatReq{ServiceInfo: &tm.SelfServiceInfo().ServiceInfo}
-
 			resp, err := tm.Coordinator().HeartBeat(ctx, req)
 			if err != nil {
 				slog.Error("send heart beat to coordinator.", slog.Any("err", err))
@@ -25,16 +24,13 @@ func (tm *taskManager) heartBeat(ctx context.Context) (err error) {
 				slog.Info("no service info from coordinator.")
 				continue
 			}
-
 			for tmid, servInfo := range resp.ServiceInfos {
 				if tmid == tm.Id {
 					continue
 				}
-
 				tm.RegisterServiceInfo(servInfo)
 			}
-
-			slog.Info("task manager send heart beat.", slog.Int("tm_size", len(resp.ServiceInfos)))
+			log.Infof("task manager send heart beat. size: %d", len(resp.ServiceInfos))
 		}
 	}()
 
@@ -52,7 +48,6 @@ func (tm *taskManager) RegisterServiceInfo(servInfo *pb.ServiceInfo) {
 			slog.Error("new core client.", slog.Any("err", err))
 			return
 		}
-
 		tm.serviceInfos[servInfo.Id] = &core.Service{
 			ServiceInfo: pb.ServiceInfo{
 				Id:            servInfo.Id,
@@ -63,7 +58,9 @@ func (tm *taskManager) RegisterServiceInfo(servInfo *pb.ServiceInfo) {
 			},
 			ClientConn: coreCli,
 		}
+	} else {
+		info.ServiceStatus = servInfo.ServiceStatus
+		info.Timestamp = servInfo.Timestamp
 	}
-	info.ServiceStatus = servInfo.ServiceStatus
-	info.Timestamp = servInfo.Timestamp
 }
+

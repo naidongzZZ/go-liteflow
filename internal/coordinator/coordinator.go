@@ -61,7 +61,7 @@ func NewCoordinator(addr string) *coordinator {
 			Timestamp:     time.Now().Unix()},
 	}
 
-	co.srv = grpc.NewServer()
+	co.srv = grpc.NewServer(grpc.MaxRecvMsgSize(1024 * 1024 * 1024))
 	pb.RegisterCoreServer(co.srv, co)
 
 	return co

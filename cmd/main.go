@@ -51,7 +51,7 @@ func main() {
 		slog.Info("app start.",slog.String("mode", runMode),slog.String("addr", addr))
 
 		if runMode == RunModeTaskManager {
-			coordAddr := ctx.String("coord_addr")
+			coordAddr := ctx.String("co_addr")
 
 			tm := task_manager.NewTaskManager(addr, coordAddr)
 			slog.Info("task_manager info.", slog.String("ID", tm.ID()))

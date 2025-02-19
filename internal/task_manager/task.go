@@ -2,8 +2,9 @@ package task_manager
 
 import (
 	"context"
+	"go-liteflow/internal/pkg/log"
 	pb "go-liteflow/pb"
-	"log/slog"
+	"os"
 	"os/exec"
 
 	"google.golang.org/grpc/codes"
@@ -16,36 +17,39 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 
 	err = tm.storager.Write(ctx, req.Ef, req.EfHash)
 	if err != nil {
-		slog.Error("write ef failed", slog.Any("err", err))
+		log.Errorf("write ef failed: %v", err)
 		return resp, status.Error(codes.Internal, "")
 	}
 
 	if len(req.Digraph.Adj) != 1 {
-		slog.Error("invalid digraph", slog.Any("digraph", req.Digraph))
+		log.Errorf("invalid digraph: %+v", req.Digraph)
 		return resp, status.Error(codes.InvalidArgument, "")
 	}
 
 	task := req.Digraph.Adj[0]
-	slog.Debug("Deploy Optask:%s to TaskManager:%s", task.Id, tm.ID())
-	slog.Debug("Task: %+v", task)
-	
+	log.Debugf("Deploy Optask:%s to TaskManager:%s", task.Id, tm.ID())
+	log.Debugf("Task: %+v", task)
+
 	tm.tasks[task.Id] = req.Digraph
 	task.State = pb.TaskStatus_Running
 
 	// 执行任务
 	RunnerPool.Run(ctx, func(c context.Context) {
-
-		filepath := tm.storager.GetExecFilePath(req.EfHash)
-		if filepath == "" {
-			slog.Error("exec file not found", slog.Any("hash", req.EfHash))
+		fpath := tm.storager.GetExecFilePath(req.EfHash)
+		if fpath == "" {
+			log.Errorf("exec file not found: %s", req.EfHash)
 			return
 		}
-
-		slog.Info("tm exec file", slog.Any("filepath", filepath), slog.Any("task", task.Id), slog.Any("optask", task.OpType))
-		cmd := exec.Command(filepath)
-		err = cmd.Run()
-		if err != nil {
-			slog.Error("exec file failed", slog.Any("err", err))
+		log.Infof("tm exec file: %s, task: %s, optask: %s", fpath, task.Id, task.OpType)
+		cmd := exec.Command(fpath,
+			"--op", task.OpType.String(),
+			"--id", task.Id,
+			"--tm", tm.ID(),
+			"--client", task.ClientId)
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		if err = cmd.Run(); err != nil {
+			log.Errorf("exec file failed: %v", err)
 			return
 		}
 

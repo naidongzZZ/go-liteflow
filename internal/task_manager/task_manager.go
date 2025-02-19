@@ -90,7 +90,7 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		ClientConn: coCli,	
 	}
 
-	tm.srv = grpc.NewServer()
+	tm.srv = grpc.NewServer(grpc.MaxRecvMsgSize(1024 * 1024 * 1024))
 	pb.RegisterCoreServer(tm.srv, tm)
 	return tm
 }

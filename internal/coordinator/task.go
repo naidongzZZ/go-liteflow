@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"go-liteflow/internal/pkg"
+	"go-liteflow/internal/pkg/log"
 	pb "go-liteflow/pb"
 	"log/slog"
 
@@ -15,7 +16,7 @@ import (
 func (co *coordinator) SubmitOpTask(ctx context.Context, req *pb.SubmitOpTaskReq) (resp *pb.SubmitOpTaskResp, err error) {
 	resp = new(pb.SubmitOpTaskResp)
 
-	slog.Debug("Recv submit op task.", slog.Any("req", req))
+	log.Debugf("Recv submit op task. req: %v", req.Digraph.EfHash)
 	if uuid.Validate(req.ClientId) != nil {
 		return resp, status.Errorf(codes.InvalidArgument, "client id is invalid")
 	}
@@ -102,5 +103,5 @@ func (co *coordinator) GetDigraph() (digraphs []*pb.Digraph) {
 			}
 		}
 	}
-	return nil
+	return digraphs
 }
