@@ -23,9 +23,7 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CoreClient interface {
 	// Event channels between task managers
-	EventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_EventChannelClient, error)
-	// Deprecated: dont use
-	// rpc DirectedEventChannel(stream EventChannelReq) returns (EventChannelResp) {}
+	EmitEvent(ctx context.Context, in *Event, opts ...grpc.CallOption) (*EmitEventResp, error)
 	// TODO raft
 	// Send heart beat to coordinator or Ask if the coordinator is alive
 	HeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error)
@@ -51,35 +49,13 @@ func NewCoreClient(cc grpc.ClientConnInterface) CoreClient {
 	return &coreClient{cc}
 }
 
-func (c *coreClient) EventChannel(ctx context.Context, opts ...grpc.CallOption) (Core_EventChannelClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Core_ServiceDesc.Streams[0], "/pb.core/EventChannel", opts...)
+func (c *coreClient) EmitEvent(ctx context.Context, in *Event, opts ...grpc.CallOption) (*EmitEventResp, error) {
+	out := new(EmitEventResp)
+	err := c.cc.Invoke(ctx, "/pb.core/EmitEvent", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &coreEventChannelClient{stream}
-	return x, nil
-}
-
-type Core_EventChannelClient interface {
-	Send(*Event) error
-	Recv() (*Event, error)
-	grpc.ClientStream
-}
-
-type coreEventChannelClient struct {
-	grpc.ClientStream
-}
-
-func (x *coreEventChannelClient) Send(m *Event) error {
-	return x.ClientStream.SendMsg(m)
-}
-
-func (x *coreEventChannelClient) Recv() (*Event, error) {
-	m := new(Event)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
+	return out, nil
 }
 
 func (c *coreClient) HeartBeat(ctx context.Context, in *HeartBeatReq, opts ...grpc.CallOption) (*HeartBeatResp, error) {
@@ -132,9 +108,7 @@ func (c *coreClient) FindOpTask(ctx context.Context, in *FindOpTaskReq, opts ...
 // for forward compatibility
 type CoreServer interface {
 	// Event channels between task managers
-	EventChannel(Core_EventChannelServer) error
-	// Deprecated: dont use
-	// rpc DirectedEventChannel(stream EventChannelReq) returns (EventChannelResp) {}
+	EmitEvent(context.Context, *Event) (*EmitEventResp, error)
 	// TODO raft
 	// Send heart beat to coordinator or Ask if the coordinator is alive
 	HeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error)
@@ -157,8 +131,8 @@ type CoreServer interface {
 type UnimplementedCoreServer struct {
 }
 
-func (UnimplementedCoreServer) EventChannel(Core_EventChannelServer) error {
-	return status.Errorf(codes.Unimplemented, "method EventChannel not implemented")
+func (UnimplementedCoreServer) EmitEvent(context.Context, *Event) (*EmitEventResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EmitEvent not implemented")
 }
 func (UnimplementedCoreServer) HeartBeat(context.Context, *HeartBeatReq) (*HeartBeatResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method HeartBeat not implemented")
@@ -188,30 +162,22 @@ func RegisterCoreServer(s grpc.ServiceRegistrar, srv CoreServer) {
 	s.RegisterService(&Core_ServiceDesc, srv)
 }
 
-func _Core_EventChannel_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(CoreServer).EventChannel(&coreEventChannelServer{stream})
-}
-
-type Core_EventChannelServer interface {
-	Send(*Event) error
-	Recv() (*Event, error)
-	grpc.ServerStream
-}
-
-type coreEventChannelServer struct {
-	grpc.ServerStream
-}
-
-func (x *coreEventChannelServer) Send(m *Event) error {
-	return x.ServerStream.SendMsg(m)
-}
-
-func (x *coreEventChannelServer) Recv() (*Event, error) {
-	m := new(Event)
-	if err := x.ServerStream.RecvMsg(m); err != nil {
+func _Core_EmitEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Event)
+	if err := dec(in); err != nil {
 		return nil, err
 	}
-	return m, nil
+	if interceptor == nil {
+		return srv.(CoreServer).EmitEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/pb.core/EmitEvent",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServer).EmitEvent(ctx, req.(*Event))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _Core_HeartBeat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -312,6 +278,10 @@ var Core_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*CoreServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "EmitEvent",
+			Handler:    _Core_EmitEvent_Handler,
+		},
+		{
 			MethodName: "HeartBeat",
 			Handler:    _Core_HeartBeat_Handler,
 		},
@@ -332,13 +302,6 @@ var Core_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Core_FindOpTask_Handler,
 		},
 	},
-	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "EventChannel",
-			Handler:       _Core_EventChannel_Handler,
-			ServerStreams: true,
-			ClientStreams: true,
-		},
-	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "pb/core.proto",
 }

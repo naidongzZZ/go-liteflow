@@ -35,7 +35,7 @@ type taskManager struct {
 
 	chMux sync.Mutex
 	// key: optask_id, val: Channel
-	//taskChannels map[string]*Channel
+	taskConn map[string]net.Conn
 
 	storager storager.Storager
 }
@@ -64,6 +64,7 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 		serviceInfos:             make(map[string]*core.Service),
 		tasks:                    make(map[string]*pb.Digraph),
 		storager:                 storager.NewStorager(context.Background(), "/tmp/task_ef"),
+		taskConn:                 make(map[string]net.Conn),
 	}
 
 	tm.serviceInfos[tm.Id] = &core.Service{	
@@ -111,6 +112,8 @@ func (tm *taskManager) Start(ctx context.Context) {
 		panic(err)
 	}
 
+	go tm.InitEventChannel()
+
 	slog.Info("task_manager grpc server start success")
 	if err = tm.srv.Serve(listener); err != nil {
 		slog.Error("grpc serve fail.", slog.Any("err", err))
@@ -145,3 +148,18 @@ func (tm *taskManager) schedule(ctx context.Context) {
 	// TODO notify optask status
 }
 
+func (tm *taskManager) GetTaskConn(taskId string) (net.Conn, bool) {	
+	tm.chMux.Lock()
+	defer tm.chMux.Unlock()
+	conn, ok := tm.taskConn[taskId]
+	return conn, ok
+}
+
+func (tm *taskManager) SetTaskConn(taskId string, conn net.Conn) {	
+	tm.chMux.Lock()
+	defer tm.chMux.Unlock()
+	_, ok := tm.taskConn[taskId]
+	if !ok {
+		tm.taskConn[taskId] = conn
+	}
+}

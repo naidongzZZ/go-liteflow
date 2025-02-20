@@ -46,9 +46,16 @@ func Test_SubmitOpTask(t *testing.T) {
 				GraphId: "1",
 				Adj: []*pb.OperatorTask{
 					{
-						Id:     "1",
-						OpType: pb.OpType_Map,
-						State:  pb.TaskStatus_Ready,
+						Id:         "1",
+						OpType:     pb.OpType_Map,
+						State:      pb.TaskStatus_Ready,
+						Downstream: []*pb.OperatorTask{{Id: "2"}},
+					},
+					{
+						Id:         "2",
+						OpType:     pb.OpType_Reduce,
+						State:      pb.TaskStatus_Ready,
+						Downstream: []*pb.OperatorTask{},
 					},
 				},
 				EfHash: efHash,

@@ -93,7 +93,8 @@ func (co *coordinator) emit(ctx context.Context, srvs []*core.Service, digraph *
 		return
 	}
 
-	for _, task := range digraph.Adj {
+	for i := len(digraph.Adj) - 1; i >= 0; i-- {
+		task := digraph.Adj[i]
 		srv, ok := m[task.TaskManagerId]
 		if !ok {
 			slog.Error("not found", slog.Any("task", task))
@@ -113,5 +114,6 @@ func (co *coordinator) emit(ctx context.Context, srvs []*core.Service, digraph *
 			slog.Error("deploy task failed", slog.Any("task", task), slog.Any("err", err))
 			return
 		}
+		time.Sleep(1 * time.Second)
 	}
 }

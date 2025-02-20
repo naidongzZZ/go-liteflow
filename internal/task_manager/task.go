@@ -3,9 +3,11 @@ package task_manager
 import (
 	"context"
 	"go-liteflow/internal/pkg/log"
+	"go-liteflow/internal/pkg/stream"
 	pb "go-liteflow/pb"
 	"os"
 	"os/exec"
+	"strings"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -41,19 +43,28 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 			return
 		}
 		log.Infof("tm exec file: %s, task: %s, optask: %s", fpath, task.Id, task.OpType)
+
+		tmids := strings.Join(
+			stream.Map(task.Downstream, func(t *pb.OperatorTask) string { return t.TaskManagerId }),
+			",",
+		)
+		tids := strings.Join(
+			stream.Map(task.Downstream, func(t *pb.OperatorTask) string { return t.Id }),
+			",",
+		)
+
 		cmd := exec.Command(fpath,
-			"--op", task.OpType.String(),
-			"--id", task.Id,
-			"--tm", tm.ID(),
-			"--client", task.ClientId)
+			"-id", task.Id,
+			"-op", task.OpType.String(),
+			"-otmid", tmids,
+			"-otid", tids,
+			"-tmid", tm.ID())
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
 		if err = cmd.Run(); err != nil {
 			log.Errorf("exec file failed: %v", err)
 			return
 		}
-
-		// TODO 设置输入输出
 	})
 
 	return resp, nil
