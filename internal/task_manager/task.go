@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -17,7 +18,11 @@ import (
 func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq) (resp *pb.DeployOpTaskResp, err error) {
 	resp = new(pb.DeployOpTaskResp)
 
-	err = tm.storager.Write(ctx, req.Ef, req.EfHash)
+	task := req.Digraph.Adj[0]
+
+	program := task.OpType.String() + "_" + task.Id + "_" + req.EfHash
+
+	err = tm.storager.Write(ctx, req.Ef, program)
 	if err != nil {
 		log.Errorf("write ef failed: %v", err)
 		return resp, status.Error(codes.Internal, "")
@@ -28,7 +33,6 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 		return resp, status.Error(codes.InvalidArgument, "")
 	}
 
-	task := req.Digraph.Adj[0]
 	log.Debugf("Deploy Optask:%s to TaskManager:%s", task.Id, tm.ID())
 	log.Debugf("Task: %+v", task)
 
@@ -36,8 +40,8 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 	task.State = pb.TaskStatus_Running
 
 	// 执行任务
-	RunnerPool.Run(ctx, func(c context.Context) {
-		fpath := tm.storager.GetExecFilePath(req.EfHash)
+	RunnerPool.Run(context.Background(), func(c context.Context) {
+		fpath := tm.storager.GetExecFilePath(program)
 		if fpath == "" {
 			log.Errorf("exec file not found: %s", req.EfHash)
 			return
@@ -65,6 +69,7 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 			log.Errorf("exec file failed: %v", err)
 			return
 		}
+		time.Sleep(10 * time.Minute)
 	})
 
 	return resp, nil

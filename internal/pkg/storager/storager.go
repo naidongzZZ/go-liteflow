@@ -2,10 +2,8 @@ package storager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"go-liteflow/internal/pkg/log"
-	"go-liteflow/internal/pkg/md5"
 	"io"
 	"os"
 )
@@ -32,9 +30,9 @@ func NewStorager(ctx context.Context, path string) (Storager) {
 
 // 将可执行文件写入到本地文件
 func (ls *localStorager) Write(ctx context.Context, ef []byte, hash string) (err error) {
-	if md5.Calc(ef) != hash {
-		return errors.New("md5 not match")
-	}
+	// if md5.Calc(ef) != hash {
+	// 	return errors.New("md5 not match")
+	// }
 
 	err = os.MkdirAll(ls.path, 0755)
 	if err != nil {

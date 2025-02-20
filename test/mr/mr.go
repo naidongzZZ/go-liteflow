@@ -39,32 +39,73 @@ func main() {
 	}
 	defer conn.Close()
 
-	fmt.Printf("optask: %s, id:%s, tmid: %s \n", op, id, tmid)
+	fmt.Printf("optask: %s, id: %s, tmid: %s \n", op, id, tmid)
 
-	for {
-		if op == pb.OpType_Map.String() {
-			for i := 0; i < 100; i++ {
-				outputEvent := &pb.Event{
-					Id:                  uuid.New().String(),
-					EventTime:           time.Now().Unix(),
-					EventType:           pb.EventType_Output,
-					OutputTaskManagerId: strings.Split(otmid, ",")[0],
-					OutputTaskId:        strings.Split(otid, ",")[0],
-					TaskManagerId:       tmid,
-					TaskId:              id,
-				}
-				for _, word := range []string{"hello", "world"} {
-					outputEvent.Data = []byte(word)
-					bytes, _ := json.Marshal(outputEvent)
-					conn.Write(bytes)
-					conn.Write([]byte("\n"))
-				}
-				time.Sleep(1 * time.Second)
+	otmid := strings.Split(otmid, ",")
+	otid := strings.Split(otid, ",")
+
+	establishEvent := &pb.Event{
+		Id:            uuid.New().String(),
+		EventTime:     time.Now().Unix(),
+		EventType:     pb.EventType_Establish,
+		TaskManagerId: tmid,
+		TaskId:        id,
+	}
+	bytes, _ := json.Marshal(establishEvent)
+	conn.Write(bytes)
+	conn.Write([]byte("\n"))
+
+	if op == "Map" {
+		Map(conn, otmid, otid, tmid, id)
+	} else if op == "Reduce" {
+		Reduce(conn, otmid, otid, tmid, id)
+	}
+
+	ch := make(chan os.Signal)
+	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	<-ch
+}
+
+func Map(conn net.Conn, otmid []string, otid []string, tmid string, id string) {
+	words := []string{"hello", "world"}
+	for i := 0; i < 100; i++ {
+		for i := range words {
+			outputEvent := &pb.Event{
+				Id:            uuid.New().String(),
+				EventTime:     time.Now().Unix(),
+				EventType:     pb.EventType_Output,
+				TaskManagerId: tmid,
+				TaskId:        id,
 			}
-			continue
-		}
+			if len(otmid) > 0 {
+				outputEvent.OutputTaskManagerId = otmid[0]
+			}
+			if len(otid) > 0 {
+				outputEvent.OutputTaskId = otid[0]
+			}
+			outputEvent.Data = []byte(words[i])
+			bytes, _ := json.Marshal(outputEvent)
 
-		reader := bufio.NewReader(conn)
+			
+			n, err := conn.Write(bytes)
+			if err != nil {
+				fmt.Printf("failed to write event: %v, n: %d\n", err, n)
+				return
+			}
+			fmt.Printf("Map send %d bytes event: %+v\n", n, outputEvent)
+			n, err = conn.Write([]byte("\n"))
+			if err != nil {
+				fmt.Printf("failed to write newline: %v, n: %d\n", err, n)
+				return
+			}
+		}
+		time.Sleep(3 * time.Second)
+	}
+}
+
+func Reduce(conn net.Conn, otmid []string, otid []string, tmid string, id string) {
+	reader := bufio.NewReaderSize(conn, 1024*1024*1024)
+	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			fmt.Printf("failed to receive event: %v\n", err)
@@ -78,15 +119,10 @@ func main() {
 			fmt.Printf("failed to unmarshal event: %v\n", err)
 			continue
 		}
-		if op == pb.OpType_Reduce.String() {
-			words := ReduceOp(string(ev.Data))
-			fmt.Printf("reduce result: %v\n", words)
-		}
+		words := ReduceOp(string(ev.Data))
+		fmt.Printf("Reduce result: %v\n", words)
 	}
 
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
-	<-ch
 }
 
 func MapOp(s string) []string {
@@ -94,6 +130,7 @@ func MapOp(s string) []string {
 }
 
 var m = make(map[string]int)
+
 func ReduceOp(s string) map[string]int {
 	for _, v := range strings.Split(s, " ") {
 		m[v]++

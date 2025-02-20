@@ -28,51 +28,67 @@ func (tm *taskManager) InitEventChannel() {
 			continue
 		}
 
-		go func(conn net.Conn) {
-			defer func() {
-				conn.Close()
-			}()
-			log.Infof("accept conn: %v", conn.RemoteAddr())
-			for {
-				reader := bufio.NewReader(conn)
-				line, err := reader.ReadString('\n')
-				if err != nil {
-					log.Errorf("read tcp fail, err: %v", err)
-				}
+		reader := bufio.NewReaderSize(conn, 1024*1024*1024)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			log.Errorf("read tcp fail, err: %v", err)
+			continue
+		}
 
-				var event pb.Event
-				err = json.Unmarshal([]byte(line), &event)
-				if err != nil {
-					log.Errorf("unmarshal event fail, err: %v", err)
-					return
-				}
-				tm.SetTaskConn(event.TaskId, conn)
+		var event pb.Event
+		err = json.Unmarshal([]byte(line), &event)
+		if err != nil {
+			log.Errorf("unmarshal event fail, err: %v", err)
+			continue
+		}
+		log.Infof("recv %s event: %+v", event.EventType, event)
+		if event.EventType == pb.EventType_Establish {
+			tm.SetTaskConn(event.TaskId, conn)
+		}
 
-				conn, ok := tm.GetTaskConn(event.OutputTaskId)
-				if ok {
-					_, err := conn.Write([]byte(line))
-					if err != nil {
-						log.Errorf("write event fail, err: %v", err)
-						continue
-					}
-					if _, err = conn.Write([]byte("\n")); err != nil {
-						log.Errorf("write newline fail, err: %v", err)
-					}
-				} else {
-					servnfo, ok := tm.serviceInfos[event.OutputTaskManagerId]
-					if !ok {
-						log.Errorf("service info not found, tmid: %s", event.OutputTaskManagerId)
-						continue
-					}
-					_, err := servnfo.ClientConn.EmitEvent(context.Background(), &event)
-					if err != nil {
-						log.Errorf("emit event fail, err: %v", err)
-					}
-				}
-			}
-
-		}(conn)
+		go read(conn, &event)
 	}
+}
+
+func read(conn net.Conn, _ *pb.Event) {
+	reader := bufio.NewReaderSize(conn, 1024*1024*1024)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			log.Errorf("read tcp fail, err: %v", err)
+			continue
+		}
+
+		var event pb.Event
+		err = json.Unmarshal([]byte(line), &event)
+		if err != nil {
+			log.Errorf("unmarshal event fail, err: %v", err)
+			continue
+		}
+
+		outputConn, ok := tm.GetTaskConn(event.OutputTaskId)
+		if ok {
+			n, err := outputConn.Write([]byte(line))
+			if err != nil {
+				log.Errorf("write event fail, err: %v, n: %d", err, n)
+			}
+			log.Infof("write %d bytes event: %+v", n, event)
+			continue
+		}
+
+		servnfo, ok := tm.serviceInfos[event.OutputTaskManagerId]
+		if !ok {
+			log.Errorf("service info not found, tmid: %s", event.OutputTaskManagerId)
+			return
+		}
+		_, err = servnfo.ClientConn.EmitEvent(context.Background(), &event)
+		if err != nil {
+			log.Errorf("emit event fail, err: %v", err)
+		}
+	}
+}
+
+func write(conn net.Conn) {
 }
 
 func (tm *taskManager) EmitEvent(ctx context.Context, event *pb.Event) (resp *pb.EmitEventResp, err error) {
