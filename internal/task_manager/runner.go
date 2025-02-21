@@ -2,38 +2,44 @@ package task_manager
 
 import (
 	"context"
-	"log/slog"
+	"go-liteflow/internal/pkg/log"
 	"runtime/debug"
 	"sync"
 )
 
 var (
-	RunnerPool = newRunnerPool()
+	rootwg              = sync.WaitGroup{}
+	rootCtx, rootCancel = context.WithCancel(context.Background())
 )
 
-type runnerPool struct {
-	wg   sync.WaitGroup
+type Runnable interface {
 }
 
-func newRunnerPool() *runnerPool {
-	return &runnerPool{
-	}
-}
+type LaunchFn func(context.Context) (error)
 
-func (rp *runnerPool) Run(ctx context.Context, fn func(c context.Context)) {
-	rp.wg.Add(1)
+func GracefulRun(f LaunchFn) {
+	rootwg.Add(1)
 	go func() {
-		defer rp.wg.Done()
+		defer rootwg.Done()
 		defer func() {
 			if r := recover(); r != nil {
-				slog.Error("panic in runner", slog.Any("err", r), slog.Any("stack", string(debug.Stack())))
+				log.Errorf("panic in runner. err: %v, stack: %s", r, string(debug.Stack()))
 			}
 		}()
-		fn(ctx)
+
+		ctx, cancel := context.WithCancel(rootCtx)
+		defer cancel()
+		err := f(ctx)
+		if err != nil {
+			log.Warnf("runner exit. err: %v", err)
+			return
+		}
 	}()
 }
 
-func (rp *runnerPool) Wait() {
-	rp.wg.Wait()
+func GracefulStop() {
+	log.Infof("graceful stoping")
+	rootCancel()
+	log.Infof("wait for cancel")
+	rootwg.Wait()
 }
-

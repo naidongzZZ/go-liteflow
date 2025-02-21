@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
+	"syscall"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -39,25 +39,25 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 	tm.tasks[task.Id] = req.Digraph
 	task.State = pb.TaskStatus_Running
 
+	fpath := tm.storager.GetExecFilePath(program)
+	if fpath == "" {
+		log.Errorf("exec file not found: %s", req.EfHash)
+		return
+	}
+	log.Infof("tm exec file: %s, task: %s, optask: %s", fpath, task.Id, task.OpType)
+
+	tmids := strings.Join(
+		stream.Map(task.Downstream, func(t *pb.OperatorTask) string { return t.TaskManagerId }),
+		",",
+	)
+	tids := strings.Join(
+		stream.Map(task.Downstream, func(t *pb.OperatorTask) string { return t.Id }),
+		",",
+	)
+
 	// 执行任务
-	RunnerPool.Run(context.Background(), func(c context.Context) {
-		fpath := tm.storager.GetExecFilePath(program)
-		if fpath == "" {
-			log.Errorf("exec file not found: %s", req.EfHash)
-			return
-		}
-		log.Infof("tm exec file: %s, task: %s, optask: %s", fpath, task.Id, task.OpType)
-
-		tmids := strings.Join(
-			stream.Map(task.Downstream, func(t *pb.OperatorTask) string { return t.TaskManagerId }),
-			",",
-		)
-		tids := strings.Join(
-			stream.Map(task.Downstream, func(t *pb.OperatorTask) string { return t.Id }),
-			",",
-		)
-
-		cmd := exec.Command(fpath,
+	GracefulRun(func(c context.Context) (error) {
+		cmd := exec.CommandContext(c, fpath,
 			"-id", task.Id,
 			"-op", task.OpType.String(),
 			"-otmid", tmids,
@@ -65,11 +65,10 @@ func (tm *taskManager) DeployOpTask(ctx context.Context, req *pb.DeployOpTaskReq
 			"-tmid", tm.ID())
 		cmd.Stderr = os.Stderr
 		cmd.Stdout = os.Stdout
-		if err = cmd.Run(); err != nil {
-			log.Errorf("exec file failed: %v", err)
-			return
+		cmd.Cancel = func() error {
+			return cmd.Process.Signal(syscall.SIGTERM)
 		}
-		time.Sleep(10 * time.Minute)
+		return cmd.Run()
 	})
 
 	return resp, nil

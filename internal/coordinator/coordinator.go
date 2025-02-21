@@ -15,7 +15,7 @@ import (
 )
 
 type coordinator struct {
-	core.Comm
+	core.CoreComm
 
 	// 服务id
 	Id string 

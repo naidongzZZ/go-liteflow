@@ -7,13 +7,13 @@ import (
 )
 
 // common grpc implement
-type Comm struct {
+type CoreComm struct {
 	pb.UnimplementedCoreServer
 }
 
 type Service struct {
 	pb.ServiceInfo
-	ClientConn  pb.CoreClient
+	ClientConn pb.CoreClient
 }
 
 func NewCoreClient(addr string) (cli pb.CoreClient, err error) {
