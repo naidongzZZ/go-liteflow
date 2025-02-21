@@ -3,11 +3,15 @@ package task_manager
 import (
 	"context"
 	"go-liteflow/internal/core"
+	"go-liteflow/internal/pkg/log"
 	"go-liteflow/internal/pkg/storager"
 	pb "go-liteflow/pb"
 	"log/slog"
 	"net"
+	"os"
+	"os/signal"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,7 +31,6 @@ type taskManager struct {
 	mux sync.Mutex
 	// key: 服务id
 	serviceInfos map[string]*core.Service
-
 
 	digraphMux sync.Mutex
 	// key: optask_id, val: *pb.Digraph
@@ -60,14 +63,14 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 	}
 
 	tm = &taskManager{
-		Id:          			  ranUid.String(),
-		serviceInfos:             make(map[string]*core.Service),
-		tasks:                    make(map[string]*pb.Digraph),
-		storager:                 storager.NewStorager(context.Background(), "/tmp/task_ef"),
-		taskConn:                 make(map[string]net.Conn),
+		Id:           ranUid.String(),
+		serviceInfos: make(map[string]*core.Service),
+		tasks:        make(map[string]*pb.Digraph),
+		storager:     storager.NewStorager(context.Background(), "/tmp/task_ef"),
+		taskConn:     make(map[string]net.Conn),
 	}
 
-	tm.serviceInfos[tm.Id] = &core.Service{	
+	tm.serviceInfos[tm.Id] = &core.Service{
 		ServiceInfo: pb.ServiceInfo{
 			Id:            tm.Id,
 			ServiceAddr:   addr,
@@ -75,12 +78,12 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 			ServiceStatus: pb.ServiceStatus_SsRunning,
 			Timestamp:     time.Now().Unix()},
 	}
-	
+
 	coCli, err := core.NewCoreClient(coordAddr)
 	if err != nil {
 		slog.Error("new coordinator client.", slog.Any("err", err))
 		panic(err)
-	}	
+	}
 	tm.serviceInfos[tm.CoId] = &core.Service{
 		ServiceInfo: pb.ServiceInfo{
 			Id:            tm.CoId,
@@ -88,7 +91,7 @@ func NewTaskManager(addr, coordAddr string) *taskManager {
 			ServiceType:   pb.ServiceType_Coordinator,
 			ServiceStatus: pb.ServiceStatus_SsRunning,
 			Timestamp:     time.Now().Unix()},
-		ClientConn: coCli,	
+		ClientConn: coCli,
 	}
 
 	tm.srv = grpc.NewServer(grpc.MaxRecvMsgSize(1024 * 1024 * 1024))
@@ -106,19 +109,28 @@ func (tm *taskManager) Start(ctx context.Context) {
 
 	tm.schedule(ctx)
 
-	listener, err := net.Listen("tcp", tm.SelfServiceInfo().ServiceAddr)
-	if err != nil {
-		slog.Error("new listener.", slog.Any("err", err))
-		panic(err)
-	}
+	GracefulRun(func(c context.Context) error {
+		addr := tm.SelfServiceInfo().ServiceAddr
+		listener, err := net.Listen("tcp", addr)
+		if err != nil {
+			panic(err)
+		}
+		log.Infof("task_manager grpc server start success")
+		if err = tm.srv.Serve(listener); err != nil {
+			panic(err)
+		}
+		return nil
+	})
 
-	go tm.InitEventChannel()
+	GracefulRun(func(c context.Context) error {
+		tm.InitEventChannel()
+		return nil
+	})
 
-	slog.Info("task_manager grpc server start success")
-	if err = tm.srv.Serve(listener); err != nil {
-		slog.Error("grpc serve fail.", slog.Any("err", err))
-		panic(err)
-	}
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, syscall.SIGQUIT, syscall.SIGHUP)
+	<-ch
+	GracefulStop()
 }
 
 func (tm *taskManager) Stop(ctx context.Context) {
@@ -137,7 +149,6 @@ func (tm *taskManager) SelfServiceInfo() *core.Service {
 	return tm.serviceInfos[tm.Id]
 }
 
-
 func (tm *taskManager) schedule(ctx context.Context) {
 	// TODO Currently, task scheduling is not supported. start task by ManageOpTask method
 
@@ -148,14 +159,14 @@ func (tm *taskManager) schedule(ctx context.Context) {
 	// TODO notify optask status
 }
 
-func (tm *taskManager) GetTaskConn(taskId string) (net.Conn, bool) {	
+func (tm *taskManager) GetTaskConn(taskId string) (net.Conn, bool) {
 	tm.chMux.Lock()
 	defer tm.chMux.Unlock()
 	conn, ok := tm.taskConn[taskId]
 	return conn, ok
 }
 
-func (tm *taskManager) SetTaskConn(taskId string, conn net.Conn) {	
+func (tm *taskManager) SetTaskConn(taskId string, conn net.Conn) {
 	tm.chMux.Lock()
 	defer tm.chMux.Unlock()
 	_, ok := tm.taskConn[taskId]
