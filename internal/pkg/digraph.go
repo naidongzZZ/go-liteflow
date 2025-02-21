@@ -61,3 +61,18 @@ func ValidateOpTask(opTask *pb.OperatorTask) (err error) {
 	}
 	return err
 }
+
+func ValidateDigraph(digraph *pb.Digraph) (err error) {
+	if digraph == nil {
+		return errors.New("digraph is nil")
+	}
+
+	// 校验adj的id不能为空
+	for _, optask := range digraph.Adj {
+		if optask.Id == "" {
+			return errors.New("optask.id is empty string")
+		}
+	}
+
+	return nil
+}

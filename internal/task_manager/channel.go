@@ -1,68 +1,113 @@
 package task_manager
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"go-liteflow/internal/pkg/log"
 	pb "go-liteflow/pb"
-	"log/slog"
+	"net"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-type Channel struct {
-	taskManagerId string
-	opTaskId      string
-	inputCh       chan *pb.Event
-	client        pb.CoreClient
+func (tm *taskManager) InitEventChannel() {
+
+	lis, err := net.Listen("tcp", ":20023")
+	if err != nil {
+		log.Errorf("listen tcp fail, err: %v", err)
+		panic(err)
+	}
+	defer lis.Close()
+
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			log.Errorf("accept tcp fail, err: %v", err)
+			continue
+		}
+
+		reader := bufio.NewReaderSize(conn, 1024*1024*1024)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			log.Errorf("read tcp fail, err: %v", err)
+			continue
+		}
+
+		var event pb.Event
+		err = json.Unmarshal([]byte(line), &event)
+		if err != nil {
+			log.Errorf("unmarshal event fail, err: %v", err)
+			continue
+		}
+		log.Infof("recv %s event: %+v", event.EventType, event)
+		if event.EventType == pb.EventType_Establish {
+			tm.SetTaskConn(event.TaskId, conn)
+		}
+
+		go read(conn, &event)
+	}
 }
 
-// TODO channel options
-func NewChannel(opTaskId string) *Channel {
-	c := &Channel{
-		opTaskId: opTaskId,
-		inputCh:  make(chan *pb.Event, 1000),
-	}
-	return c
-}
+func read(conn net.Conn, _ *pb.Event) {
+	reader := bufio.NewReaderSize(conn, 1024*1024*1024)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			log.Errorf("read tcp fail, err: %v", err)
+			continue
+		}
 
-func NewChannelWithClient(
-	ctx context.Context,
-	taskManagerId string,
-	client pb.CoreClient) (c *Channel, err error) {
-	c = &Channel{
-		taskManagerId: taskManagerId,
-		inputCh:       make(chan *pb.Event, 5000),
-		client:        client,
-	}
+		var event pb.Event
+		err = json.Unmarshal([]byte(line), &event)
+		if err != nil {
+			log.Errorf("unmarshal event fail, err: %v", err)
+			continue
+		}
 
-	go func() {
-		stream, e := c.client.DirectedEventChannel(ctx)
-		if e != nil {
-			err = e
-			slog.Error("create event channel.", slog.Any("err", e))
+		outputConn, ok := tm.GetTaskConn(event.OutputTaskId)
+		if ok {
+			n, err := outputConn.Write([]byte(line))
+			if err != nil {
+				log.Errorf("write event fail, err: %v, n: %d", err, n)
+			}
+			log.Infof("write %d bytes event: %+v", n, event)
+			continue
+		}
+
+		servnfo, ok := tm.serviceInfos[event.OutputTaskManagerId]
+		if !ok {
+			log.Errorf("service info not found, tmid: %s", event.OutputTaskManagerId)
 			return
 		}
-
-		for {
-			select {
-			case ev := <-c.inputCh:
-				req := &pb.EventChannelReq{}
-				req.Events = append(req.Events, ev)
-
-				if e := stream.Send(req); e != nil {
-					slog.Error("send to event channel.", slog.Any("err", e))
-				}
-			case <-ctx.Done():
-				slog.Info("recv done.", slog.Any("err", ctx.Err()))
-				return
-			}
+		_, err = servnfo.ClientConn.EmitEvent(context.Background(), &event)
+		if err != nil {
+			log.Errorf("emit event fail, err: %v", err)
 		}
-	}()
-	return c, nil
+	}
 }
 
-func (ch *Channel) InputCh() chan *pb.Event {
-	return ch.inputCh
+func write(conn net.Conn) {
 }
 
-func (ch *Channel) PutInputCh(ctx context.Context, ev *pb.Event) (ok bool) {
-	ch.inputCh <- ev
-	return true
+func (tm *taskManager) EmitEvent(ctx context.Context, event *pb.Event) (resp *pb.EmitEventResp, err error) {
+	conn, ok := tm.GetTaskConn(event.OutputTaskId)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "task conn not found, task_id: %s", event.OutputTaskId)
+	}
+
+	bytes, err := json.Marshal(event)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "marshal event fail, err: %v", err)
+	}
+
+	if _, err = conn.Write(bytes); err != nil {
+		return nil, status.Errorf(codes.Internal, "write event fail, err: %v", err)
+	}
+	if _, err = conn.Write([]byte("\n")); err != nil {
+		return nil, status.Errorf(codes.Internal, "write newline fail, err: %v", err)
+	}
+
+	return &pb.EmitEventResp{}, nil
 }
