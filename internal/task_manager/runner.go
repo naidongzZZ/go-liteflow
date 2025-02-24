@@ -27,9 +27,7 @@ func GracefulRun(f LaunchFn) {
 			}
 		}()
 
-		ctx, cancel := context.WithCancel(rootCtx)
-		defer cancel()
-		err := f(ctx)
+		err := f(rootCtx)
 		if err != nil {
 			log.Warnf("runner exit. err: %v", err)
 			return

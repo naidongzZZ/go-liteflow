@@ -111,19 +111,47 @@ func (tm *taskManager) Start(ctx context.Context) {
 
 	GracefulRun(func(c context.Context) error {
 		addr := tm.SelfServiceInfo().ServiceAddr
-		listener, err := net.Listen("tcp", addr)
+		lis, err := net.Listen("tcp", addr)
 		if err != nil {
 			panic(err)
 		}
 		log.Infof("task_manager grpc server start success")
-		if err = tm.srv.Serve(listener); err != nil {
+
+		go func(ctx context.Context) {
+			for {
+				select {
+				case <-ctx.Done():
+					tm.srv.Stop()
+					return
+				}
+			}
+		}(c)
+
+		if err = tm.srv.Serve(lis); err != nil {
 			panic(err)
 		}
+		log.Infof("task_manager stop grpc server")
 		return nil
 	})
 
 	GracefulRun(func(c context.Context) error {
-		tm.InitEventChannel()
+		lis, err := net.Listen("unix", UnixAddress(tm.Id))
+		if err != nil {
+			panic(err)
+		}
+
+		go func(ctx context.Context) {
+			for {
+				select {
+				case <-ctx.Done():
+					lis.Close()
+					return
+				}
+			}
+		}(c)
+
+		ServeOn(c, lis)
+		log.Infof("task_manager stop unix socket")
 		return nil
 	})
 

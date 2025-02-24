@@ -32,7 +32,7 @@ func main() {
 	flag.StringVar(&tmid, "tmid", "", "")
 	flag.Parse()
 
-	conn, err := net.Dial("tcp", "127.0.0.1:20023")
+	conn, err := net.Dial("unix", "/tmp/tm.sock")
 	if err != nil {
 		fmt.Printf("failed to connect to coordinator: %v\n", err)
 		return

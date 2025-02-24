@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"go-liteflow/internal/pkg/log"
 	pb "go-liteflow/pb"
 	"net"
@@ -12,18 +13,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-func (tm *taskManager) InitEventChannel() {
+func UnixAddress(tmId string) string {
+	return "/tmp/tm.sock"
+}
 
-	lis, err := net.Listen("tcp", ":20023")
-	if err != nil {
-		log.Errorf("listen tcp fail, err: %v", err)
-		panic(err)
-	}
-	defer lis.Close()
-
+func ServeOn(ctx context.Context, lis net.Listener) {
 	for {
 		conn, err := lis.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
 			log.Errorf("accept tcp fail, err: %v", err)
 			continue
 		}
